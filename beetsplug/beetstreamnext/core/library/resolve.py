@@ -411,29 +411,16 @@ class Resolve:
                 by_int.setdefault(value, []).append(sid)
 
         if by_mbid:
-            mbids = list(by_mbid)
+            # One pass: the mbid columns aren't indexed, so IN queries would each scan the table anyway
             with flask.g.lib.transaction() as tx:
-                rows = chunked_query(tx,
+                rows = tx.query(
                     """
-                    SELECT id, mb_releasetrackid, mb_trackid 
-                    FROM items 
-                    WHERE mb_releasetrackid IN ({q})
-                    """, mbids
-                )
-                rows += chunked_query(tx,
+                    SELECT id, mb_releasetrackid, mb_trackid
+                    FROM items
                     """
-                    SELECT id, mb_releasetrackid, mb_trackid 
-                    FROM items 
-                    WHERE mb_trackid IN ({q})
-                    """, mbids
                 )
-            seen_rows = set()
             for row in rows:
-                if row[0] in seen_rows:
-                    continue
-                seen_rows.add(row[0])
-                key = row[1] or row[2]
-                for sid in by_mbid.get(key, []):
+                for sid in by_mbid.get(row[1] or row[2], []):
                     result[sid] = row[0]
 
         if by_hash:
