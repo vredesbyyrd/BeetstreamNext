@@ -86,9 +86,8 @@ def endpoint_get_album_info() -> flask.Response:
     album_quot = urllib.parse.quote(album.get('album', ''))
     lastfm_url = f'https://www.last.fm/music/{artist_quot}/{album_quot}' if artist_quot and album_quot else ''
 
-    tag = 'albumInfo2' if 'getAlbumInfo2' in flask.request.path else 'albumInfo'
     payload = {
-        tag: {
+        'albumInfo': {      # getAlbumInfo2 also answers with 'albumInfo'
             'musicBrainzId': album.get('mb_albumid', ''),
             'lastFmUrl': lastfm_url,
             'smallImageUrl': tokenised_image_url(image_id, size=250),
