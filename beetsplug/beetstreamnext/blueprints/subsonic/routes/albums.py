@@ -111,7 +111,7 @@ def endpoint_get_album_list() -> flask.Response:
     resp_fmt = r.get('f', default='xml', type=safe_str)
 
     sort_by = r.get('type', default='alphabeticalByName', type=safe_str)    # Required
-    size = r.get('size', default=10, type=page_size)
+    size = r.get('size', default=10, type=page_size) or -1                  # 0: no limit
     offset = r.get('offset', default=0, type=page_offset)
     from_year = r.get('fromYear', default=0, type=int)                      # Required if byYear
     to_year = r.get('toYear', default=3000, type=int)                       # Required if byYear
@@ -161,7 +161,7 @@ def endpoint_get_album_list() -> flask.Response:
                 skipped += 1
                 continue
             albums_list.append(dict(album))
-            if len(albums_list) >= size:
+            if len(albums_list) == size:
                 break
 
     elif sort_by in ('frequent', 'recent'):
@@ -192,7 +192,7 @@ def endpoint_get_album_list() -> flask.Response:
             album = flask.g.lib.get_album(album_id)
             if album is not None:
                 albums_list.append(dict(album))
-            if len(albums_list) >= size:
+            if len(albums_list) == size:
                 break
 
     else:
