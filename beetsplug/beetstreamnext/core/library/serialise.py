@@ -325,16 +325,16 @@ class Serialise:
         # Lists of albums only use cache (network is for single album views)
         cached_only = not include_songs
 
-        version = data.get('version')  # 'Deluxe Edition', 'Japanese Expanded Edition', etc.
+        version = data.get('version') or data.get('albumdisambig')  # 'Deluxe Edition', 'Japanese Expanded Edition', etc.
         if not version and subsonic_album['musicBrainzId'] and app.config.get('fetch_album_version'):
             mb_data = query_musicbrainz(subsonic_album['musicBrainzId'], data_type='album', cached_only=cached_only)
-            version = mb_data.get('disambiguation')
+            version = (mb_data.get('disambiguation') or '').title()
 
             if version and app.config.get('save_album_version'):
-                write_beets_field('album', beets_album_id, 'version', version.title(), allow_flex=True)
+                write_beets_field('album', beets_album_id, 'version', version, allow_flex=True)
 
         if version:
-            subsonic_album['version'] = version.title()
+            subsonic_album['version'] = version
 
         # Add labels if possible
         label = data.get('label', '')
