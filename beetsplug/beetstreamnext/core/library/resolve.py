@@ -343,7 +343,23 @@ class Resolve:
         Batched song resolving. Returns {id: song_object},
         """
 
+        items: Dict[int, Item] = {}
         result: Dict[str, Item] = {}
+
+        for sid, beets_id in cls.song_ids(subsonic_ids).items():
+            if beets_id not in items:
+                items[beets_id] = flask.g.lib.get_item(beets_id)
+            result[sid] = items[beets_id]
+
+        return result
+
+    @classmethod
+    def song_ids(cls, subsonic_ids: Sequence[str]) -> Dict[str, int]:
+        """
+        Batched song resolving, without loading the songs. Returns {id: beets_id}.
+        """
+
+        result: Dict[str, int] = {}
 
         by_mbid: Dict[str, List[str]] = {}
         by_hash: Dict[str, List[str]] = {}
@@ -383,9 +399,8 @@ class Resolve:
                     continue
                 seen_rows.add(row[0])
                 key = row[1] or row[2]
-                item = flask.g.lib.get_item(row[0])
                 for sid in by_mbid.get(key, []):
-                    result[sid] = item
+                    result[sid] = row[0]
 
         if by_hash:
             root_directory = app.config['root_directory']
@@ -401,17 +416,15 @@ class Resolve:
             for row in candidates:
                 h = path_hash(row[1], root_directory)
                 if h in by_hash:
-                    item = flask.g.lib.get_item(row[0])
                     for sid in by_hash[h]:
-                        result[sid] = item
+                        result[sid] = row[0]
 
         if by_int:
             with flask.g.lib.transaction() as tx:
                 rows = chunked_query(tx, 'SELECT id FROM items WHERE id IN ({q})', list(by_int))
             for row in rows:
-                item = flask.g.lib.get_item(row[0])
                 for sid in by_int.get(row[0], []):
-                    result[sid] = item
+                    result[sid] = row[0]
 
         return result
 

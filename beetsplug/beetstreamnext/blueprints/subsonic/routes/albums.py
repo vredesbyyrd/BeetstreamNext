@@ -5,14 +5,14 @@ import flask
 from .. import subsonic_bp
 
 from beetsplug.beetstreamnext.utils.text import safe_str
-from beetsplug.beetstreamnext.utils.db import get_beets_schema
+from beetsplug.beetstreamnext.utils.db import get_beets_schema, chunked_query
 from beetsplug.beetstreamnext.core.library.ids import IDs
-from beetsplug.beetstreamnext.core.library.resolve import Resolve
+from beetsplug.beetstreamnext.core.library.resolve import Resolve, standardise_datadict
 from beetsplug.beetstreamnext.core.library.serialise import Serialise
 
 from beetsplug.beetstreamnext.blueprints.subsonic.responses import subsonic_response, subsonic_error
 from beetsplug.beetstreamnext.core.media.images import tokenised_image_url
-from beetsplug.beetstreamnext.core.storage.connection import dual_database
+from beetsplug.beetstreamnext.core.storage.connection import database
 from beetsplug.beetstreamnext.core.storage.cache import preload_albums, get_song_counts
 
 
@@ -128,61 +128,63 @@ def endpoint_get_album_list() -> flask.Response:
     tag = 'albumList2' if 'getAlbumList2' in flask.request.path else 'albumList'
 
     if sort_by in ('starred', 'frequent', 'highest', 'recent'):
-        with dual_database() as db:
+        page = slice(offset, offset + size if size > 0 else None)
 
-            if sort_by == 'starred':
-                album_rows = db.execute(
+        if sort_by in ('starred', 'highest'):
+            with database() as db:
+                if sort_by == 'starred':
+                    rows = db.execute(
+                        """
+                        SELECT item_id
+                        FROM likes
+                        WHERE username = ? AND item_id LIKE 'al-%'
+                        ORDER BY starred_at DESC
+                        """, (flask.g.username,)
+                    ).fetchall()
+
+                else:
+                    rows = db.execute(
+                        """
+                        SELECT item_id
+                        FROM ratings
+                        WHERE username = ? AND item_id LIKE 'al-%'
+                        ORDER BY rating DESC
+                        """, (flask.g.username,)
+                    ).fetchall()
+
+            albums = [a for a in (Resolve.album(row['item_id']) for row in rows) if a][page]
+
+        else:
+            with database() as db:
+                stat_rows = db.execute(
                     """
-                    SELECT a.*
-                    FROM likes l
-                             JOIN beets.albums a ON l.item_id = 'al-' || a.id
-                    WHERE l.username = ?
-                    ORDER BY l.starred_at DESC
-                    LIMIT ? OFFSET ?
-                    """, (flask.g.username, size, offset)
+                    SELECT song_id, play_count, last_played
+                    FROM play_stats
+                    WHERE username = ?
+                    """, (flask.g.username,)
                 ).fetchall()
 
-            elif sort_by == 'frequent':
-                album_rows = db.execute(
-                    """
-                    SELECT a.*, SUM(ps.play_count) as total_plays
-                    FROM play_stats ps
-                             JOIN beets.items i ON ps.song_id = i.id
-                             JOIN beets.albums a ON i.album_id = a.id
-                    WHERE ps.username = ?
-                    GROUP BY a.id
-                    ORDER BY total_plays DESC
-                    LIMIT ? OFFSET ?
-                    """, (flask.g.username, size, offset)
-                ).fetchall()
+            beets_ids = Resolve.song_ids([row['song_id'] for row in stat_rows])
 
-            elif sort_by == 'highest':
-                album_rows = db.execute(
-                    """
-                    SELECT a.*
-                    FROM ratings r
-                             JOIN beets.albums a ON r.item_id = 'al-' || a.id
-                    WHERE r.username = ?
-                    ORDER BY r.rating DESC
-                    LIMIT ? OFFSET ?
-                    """, (flask.g.username, size, offset)
-                ).fetchall()
+            with flask.g.lib.transaction() as tx:
+                album_of = dict(chunked_query(
+                    tx, 'SELECT id, album_id FROM items WHERE id IN ({q})', list(set(beets_ids.values()))
+                ))
 
-            elif sort_by == 'recent':
-                album_rows = db.execute(
-                    """
-                    SELECT a.*, MAX(ps.last_played) as latest_play
-                    FROM play_stats ps
-                             JOIN beets.items i ON ps.song_id = i.id
-                             JOIN beets.albums a ON i.album_id = a.id
-                    WHERE ps.username = ?
-                    GROUP BY a.id
-                    ORDER BY latest_play DESC
-                    LIMIT ? OFFSET ?
-                    """, (flask.g.username, size, offset)
-                ).fetchall()
+            scores = {}
+            for row in stat_rows:
+                album_id = album_of.get(beets_ids.get(row['song_id']))
+                if album_id is None:
+                    continue
+                if sort_by == 'frequent':
+                    scores[album_id] = scores.get(album_id, 0) + row['play_count']
+                else:
+                    scores[album_id] = max(scores.get(album_id, 0), row['last_played'] or 0)
 
-        albums_dict = [dict(row) for row in album_rows]
+            ranked = sorted(scores, key=scores.get, reverse=True)[page]
+            albums = [a for a in (flask.g.lib.get_album(album_id) for album_id in ranked) if a]
+
+        albums_dict = [standardise_datadict(a) for a in albums]
 
     else:
         # All other sort types we can do in SQL directly
