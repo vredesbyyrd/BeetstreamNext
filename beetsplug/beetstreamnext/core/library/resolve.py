@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import string
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List, Any, Sequence, Callable
 import flask
@@ -55,96 +56,129 @@ def standardise_datadict(obj: Dict | LibModel | Item | Any) -> dict:
         return {}
 
 
+_ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
+
+
+class _ArtistIndex:
+    """
+    Artist credits of the whole beets library, read in one pass.
+
+    Answers per-name metadata lookups without querying the db: role checks are substring
+    matches over these fields, which no index can serve, so each one would be a full
+    scan of the items table.
+    """
+
+    def __init__(self, lib):
+        cols = get_beets_schema('items')
+        comp_col = 'composers' if 'composers' in cols else ('composer' if 'composer' in cols else 'NULL')
+        lyr_col = 'lyricists' if 'lyricists' in cols else ('lyricist' if 'lyricist' in cols else 'NULL')
+
+        # name -> (mbid, sort name) of the first album/song credited to it
+        self._album_artists: Dict[str, Tuple[str, str]] = {}
+        self._song_artists: Dict[str, Tuple[str, str]] = {}
+        multi_artists, composers, lyricists = set(), set(), set()
+
+        with lib.transaction() as tx:
+            for name, mbid, sort_name in tx.query(
+                    """
+                    SELECT albumartist, mb_albumartistid, albumartist_sort
+                    FROM albums
+                    ORDER BY id
+                    """):
+                self._album_artists.setdefault(name, (mbid, sort_name))
+
+            for name, mbid, sort_name, artists, comp, lyr in tx.query(
+                    f"""
+                    SELECT artist, mb_artistid, artist_sort, artists, {comp_col}, {lyr_col}
+                    FROM items
+                    ORDER BY id
+                    """):
+                self._song_artists.setdefault(name, (mbid, sort_name))
+                multi_artists.add(artists)
+                composers.add(comp)
+                lyricists.add(lyr)
+
+        self._multi_artists = self._searchable(multi_artists)
+        self._composers = self._searchable(composers)
+        self._lyricists = self._searchable(lyricists)
+
+        self._metadata: Dict[str, dict] = {}
+
+    @staticmethod
+    def _searchable(values: set) -> str:
+        """
+        Distinct values joined into one string for `in` substring tests. Same matching as
+        SQLite's LIKE '%name%': case-insensitive for ASCII letters only. NUL can't occur
+        in a name, so a match never spans two values.
+        """
+        return '\0'.join(v for v in values if v).translate(_ASCII_LOWER)
+
+    def metadata(self, name: str) -> dict:
+        result = self._metadata.get(name)
+        if result is None:
+            result = self._metadata[name] = self._lookup(name)
+        return result
+
+    def _lookup(self, name: str) -> dict:
+        mbid = ''
+        sort_name = ''
+        roles = []
+
+        album_row = self._album_artists.get(name)
+        if album_row is not None:
+            roles.append('albumartist')
+            if album_row[0]:
+                mbid = validate_mbid(album_row[0])
+            if album_row[1]:
+                sort_name = album_row[1]
+
+        song_row = self._song_artists.get(name)
+        if song_row is not None:
+            roles.append('artist')
+            if not mbid and song_row[0]:
+                mbid = validate_mbid(song_row[0])
+            if not sort_name and song_row[1]:
+                sort_name = song_row[1]
+
+        needle = name.translate(_ASCII_LOWER)
+
+        # Check for secondary roles
+        if not roles and needle in self._multi_artists:
+            roles.append('artist')
+        if needle in self._composers:
+            roles.append('composer')
+        if needle in self._lyricists:
+            roles.append('lyricist')
+
+        return {
+            'mbid': mbid,
+            'sort_name': sort_name or name,
+            'roles': roles if roles else ['artist']
+        }
+
+
+# (beets db mtime, index built from it), swapped as a whole so readers never need a lock
+_artist_index: Optional[Tuple[float, _ArtistIndex]] = None
+
+
 def get_artist_metadata(name: str) -> dict:
     """
     Lookup MBID, sort name and roles for a given artist name.
+    The returned dict is shared: don't mutate it.
     """
+    global _artist_index
 
     if not name:
         return {'mbid': '', 'sort_name': '', 'roles': []}
 
-    cache = flask.g.setdefault('_artist_metadata_cache', {})
-    if name in cache:
-        return cache[name]
+    mtime = os.path.getmtime(os.fsdecode(flask.g.lib.path))
+    cached = _artist_index
+    if cached is None or cached[0] != mtime:
+        # No lock: a concurrent duplicate build is harmless, but holding a lock while
+        # waiting on beets' own transaction lock could deadlock
+        cached = _artist_index = (mtime, _ArtistIndex(flask.g.lib))
 
-    mbid = ''
-    sort_name = ''
-    roles = []
-
-    with flask.g.lib.transaction() as tx:
-        album_rows = tx.query(
-            """
-            SELECT mb_albumartistid, albumartist_sort 
-            FROM albums 
-            WHERE albumartist = ? LIMIT 1
-            """, (name,)
-        )
-        if album_rows:
-            roles.append('albumartist')
-
-            row = album_rows[0]
-            if row[0]:
-                mbid = validate_mbid(row[0])
-            if row[1]:
-                sort_name = row[1]
-
-        item_rows = tx.query(
-            """
-            SELECT mb_artistid, artist_sort 
-            FROM items 
-            WHERE artist = ? LIMIT 1
-            """, (name,)
-        )
-        if item_rows:
-            roles.append('artist')
-
-            row = item_rows[0]
-            if not mbid and row[0]:
-                mbid = validate_mbid(row[0])
-            if not sort_name and row[1]:
-                sort_name = row[1]
-
-        # Check for secondary roles
-        if not roles:
-            if tx.query(
-                    """
-                    SELECT 1
-                    FROM items
-                    WHERE artists LIKE ?
-                    LIMIT 1
-                    """, (f"%{name}%",)):
-                roles.append('artist')
-
-        cols = get_beets_schema('items')
-
-        comp_col = 'composers' if 'composers' in cols else ('composer' if 'composer' in cols else None)
-        if comp_col and tx.query(
-                f"""
-                SELECT 1 FROM items
-                WHERE {comp_col} = ? OR {comp_col}
-                LIKE ?
-                LIMIT 1
-                """, (name, f"%{name}%")):
-            roles.append('composer')
-
-        lyr_col = 'lyricists' if 'lyricists' in cols else ('lyricist' if 'lyricist' in cols else None)
-        if lyr_col and tx.query(
-                f"""
-                SELECT 1 FROM items
-                WHERE {lyr_col} = ? OR {lyr_col}
-                LIKE ?
-                LIMIT 1
-                """, (name, f"%{name}%")):
-            roles.append('lyricist')
-
-    result = {
-        'mbid': mbid,
-        'sort_name': sort_name or name,
-        'roles': roles if roles else ['artist']
-    }
-
-    cache[name] = result
-    return result
+    return cached[1].metadata(name)
 
 
 ##
