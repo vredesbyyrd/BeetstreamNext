@@ -100,6 +100,13 @@ def _get_artists(data: dict) -> Tuple[List[Dict], List[Dict], List[Dict], str]:
     return artists_array, album_artists_array, contributors_array, display_composer
 
 
+def _item_date(year: Optional[int], month: Optional[int], day: Optional[int]) -> dict:
+    """
+    OpenSubsonic ItemDate, without the parts beets doesn't know (stored as 0)
+    """
+    return {k: v for k, v in (('year', year), ('month', month), ('day', day)) if v}
+
+
 def _exact_albums_by(artist_name: str) -> List[LibModel]:
     """
     Albums whose albumartist exactly matches
@@ -171,16 +178,12 @@ class Serialise:
             'genre': main_genre,
             'genres': genres_list,
             'created': timestamp_to_iso(data.get('added')),
-            'originalReleaseDate': {
-                'year': data.get('original_year') or data.get('year') or 0,
-                'month': data.get('original_month') or data.get('month') or 0,
-                'day': data.get('original_day') or data.get('day') or 0
-            },
-            'releaseDate': {
-                'year': data.get('year') or 0,
-                'month': data.get('month') or 0,
-                'day': data.get('day') or 0
-            },
+            'originalReleaseDate': _item_date(
+                data.get('original_year') or data.get('year'),
+                data.get('original_month') or data.get('month'),
+                data.get('original_day') or data.get('day')
+            ),
+            'releaseDate': _item_date(data.get('year'), data.get('month'), data.get('day')),
         }
 
         if display_composer:
