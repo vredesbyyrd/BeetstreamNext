@@ -18,8 +18,9 @@ if TYPE_CHECKING:
     from beets.plugins import BeetsPlugin
 
 
-# to detect LRC timestamps like [00:12.34]
-_LRC_TIMESTAMP_REGEX = re.compile(r'^\[(\d+:\d+\.\d+)\]')
+# to detect LRC timestamps like [00:12.34] (several per line), and ID tags like [ar:...] or [offset:+250]
+_LRC_TIMESTAMP_REGEX = re.compile(r'\[(\d+):(\d{1,2})(?:[.:](\d{1,3}))?\]')
+_LRC_TAG_REGEX = re.compile(r'^\[([a-z]+):(.*)\]$')
 
 
 def _get_lyrics_plugin() -> Union['BeetsPlugin', 'LyricsPlugin', None]:
@@ -38,28 +39,42 @@ def _get_lyrics_plugin() -> Union['BeetsPlugin', 'LyricsPlugin', None]:
         return None
 
 
-def _parse_lyrics_content(text: str) -> Tuple[list, bool]:
+def _parse_lyrics_content(text: str) -> Tuple[list, bool, int]:
     """
     Parses raw lyrics text.
-    Detects if it's synced (LRC) and returns structured lines.
+    Detects if it's synced (LRC) and returns structured lines, and the LRC offset (ms).
     """
-    lines = []
-    is_synced = False
+    timed_lines = []
+    plain_lines = []
+    offset = 0
 
     for line in text.splitlines():
         line = line.strip()
-        if not line:
+
+        match = _LRC_TAG_REGEX.match(line)
+        if match:
+            if match.group(1) == 'offset':
+                try:
+                    offset = int(match.group(2))
+                except ValueError:
+                    pass
             continue
 
-        match = _LRC_TIMESTAMP_REGEX.match(line)
-        if match:
-            is_synced = True
-            clean_value = _LRC_TIMESTAMP_REGEX.sub('', line).strip()
-            lines.append({'value': clean_value, 'synced': True})
-        else:
-            lines.append({'value': line})
+        starts = []
+        while match := _LRC_TIMESTAMP_REGEX.match(line):
+            minutes, seconds, fraction = match.groups()
+            starts.append((int(minutes) * 60 + int(seconds)) * 1000 + int((fraction or '0').ljust(3, '0')))
+            line = line[match.end():]
 
-    return lines, is_synced
+        if starts:
+            timed_lines.extend({'start': start, 'value': line.strip()} for start in starts)
+        elif line:
+            plain_lines.append({'value': line})
+
+    if timed_lines:
+        return sorted(timed_lines, key=lambda line: line['start']), True, offset
+
+    return plain_lines, False, 0
 
 
 def _fetch_lyrics_data(item) -> dict | None:
@@ -158,10 +173,9 @@ def endpoint_get_lyrics_by_song_id() -> flask.Response:
 
     data = _fetch_lyrics_data(item)
     if not data:
-        return subsonic_error(70, message='Lyrics not found.', resp_fmt=resp_fmt)
+        return subsonic_response({'lyricsList': {'structuredLyrics': []}}, resp_fmt=resp_fmt)
 
-    lines, has_timestamps = _parse_lyrics_content(data['text'])
-
+    lines, has_timestamps, offset = _parse_lyrics_content(data['text'])
 
     structured = {
         'displayArtist': data['artist'],
@@ -170,6 +184,8 @@ def endpoint_get_lyrics_by_song_id() -> flask.Response:
         'synced': has_timestamps,
         'line': lines
     }
+    if offset:
+        structured['offset'] = offset
     if enhanced:
         structured['kind'] = 'main'
 
