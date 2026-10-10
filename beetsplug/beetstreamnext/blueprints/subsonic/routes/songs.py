@@ -362,7 +362,7 @@ def endpoint_get_similar_songs() -> flask.Response:
         if conditions:
             # Overfetch a bit since some rows may duplicate what track-level already found
             remaining = limit - len(matched_songs)
-            query = "SELECT DISTINCT * FROM items WHERE " + " OR ".join(conditions) + " LIMIT ?"  # nosec B608
+            query = "SELECT DISTINCT * FROM items WHERE " + " OR ".join(conditions) + " ORDER BY RANDOM() LIMIT ?"  # nosec B608
             params.append(remaining + len(matched_songs))
 
             with flask.g.lib.transaction() as tx:
