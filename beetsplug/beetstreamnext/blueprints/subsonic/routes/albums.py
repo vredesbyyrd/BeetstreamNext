@@ -110,7 +110,7 @@ def endpoint_get_album_list() -> flask.Response:
     resp_fmt = r.get('f', default='xml', type=safe_str)
 
     sort_by = r.get('type', default='alphabeticalByName', type=safe_str)    # Required
-    size = r.get('size', default=10, type=int)
+    size = r.get('size', default=10, type=int) or -1                        # 0: no limit
     offset = r.get('offset', default=0, type=int)
     from_year = r.get('fromYear', default=0, type=int)                      # Required if byYear
     to_year = r.get('toYear', default=3000, type=int)                       # Required if byYear

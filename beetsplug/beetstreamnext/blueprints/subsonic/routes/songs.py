@@ -88,7 +88,7 @@ def endpoint_songs_by_genre() -> flask.Response:
     r = flask.request.values
     resp_fmt = r.get('f', default='xml', type=safe_str)
     genre = r.get('genre', default='', type=safe_str)[:64]   # Required
-    count = r.get('count', default=10, type=int)
+    count = r.get('count', default=10, type=int) or -1       # 0: no limit
     offset = r.get('offset', default=0, type=int)
 
     if not genre:
