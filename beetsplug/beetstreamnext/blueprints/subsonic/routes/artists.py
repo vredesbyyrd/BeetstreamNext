@@ -164,7 +164,7 @@ def endpoint_artist_info() -> flask.Response:
 
     if app.config['lastfm_api_key']:
         if artist_mbid:
-            data_lastfm = query_lastfm(q=artist_mbid, data_type='artist', method='info', is_mbid=True)
+            data_lastfm = query_lastfm(q=artist_mbid, data_type='artist', method='info', is_mbid=True, name=artist_name)
         else:
             data_lastfm = query_lastfm(q=artist_name, data_type='artist', method='info', is_mbid=False)
 
@@ -226,7 +226,7 @@ def endpoint_artist_info() -> flask.Response:
 
     if app.config['lastfm_api_key'] and count > 0:
         if artist_mbid:
-            data_similar = query_lastfm(q=artist_mbid, data_type='artist', method='similar', is_mbid=True)
+            data_similar = query_lastfm(q=artist_mbid, data_type='artist', method='similar', is_mbid=True, name=artist_name)
         else:
             data_similar = query_lastfm(q=artist_name, data_type='artist', method='similar', is_mbid=False)
 
