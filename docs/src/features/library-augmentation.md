@@ -16,7 +16,7 @@ A lot of what shows up in your Subsonic client (artist photos, biographies, comm
 
 ## Artwork
 
-- **Album art / artist images** are served from your Beets library's local art path when available.
+- **Album art / artist images** are served from your Beets library's local art path when available (for artists, an `artist.*` image in the artist's folder, like the one beets' artistart plugin saves).
 
 - When missing:
   - Album art from [Cover Art Archive](https://coverartarchive.org/).
