@@ -137,6 +137,31 @@ def endpoint_get_artist() -> flask.Response:
     return subsonic_response(payload, resp_fmt=resp_fmt)
 
 
+def _library_album_artists() -> tuple[dict[str, str], dict[str, str]]:
+    """
+    The library's album artists, to match artists named by Last.fm: by MBID (a solo credit over a
+    joint one), and by name, keyed as it is and case-folded.
+    """
+    with flask.g.lib.transaction() as tx:
+        rows = tx.query(
+            """
+            SELECT albumartist, mb_albumartistid, albumartists
+            FROM albums
+            WHERE albumartist != ''
+            ORDER BY id
+            """
+        )
+
+    by_mbid, by_name = {}, {}
+    for name, mbid, _ in sorted(rows, key=lambda r: IDs.is_joint_credit(r[2], r[0])):
+        if mbid:
+            by_mbid.setdefault(mbid, name)
+        by_name.setdefault(name.casefold(), name)
+        by_name[name] = name
+
+    return by_mbid, by_name
+
+
 # Spec: https://opensubsonic.netlify.app/docs/endpoints/getArtistInfo/
 @subsonic_bp.route('/getArtistInfo', methods=['GET', 'POST'])
 @subsonic_bp.route('/getArtistInfo.view', methods=['GET', 'POST'])
@@ -230,11 +255,19 @@ def endpoint_artist_info() -> flask.Response:
         else:
             data_similar = query_lastfm(q=artist_name, data_type='artist', method='similar', is_mbid=False)
 
+        by_mbid, by_name = _library_album_artists()
+
         similar_artists = []
+        seen = set()
         for entry in data_similar.get('similarartists', {}).get('artist', []):
             name = entry.get('name')
             if not name:
                 continue
+            # The exact name first: an album's MBID can be its first credited artist's, not its album artist's
+            name = by_name.get(name) or by_mbid.get(entry.get('mbid')) or by_name.get(name.casefold(), name)
+            if name in seen:
+                continue
+            seen.add(name)
             mapped = Serialise.artist(name, with_albums=False)
             if not include_not_present and not mapped['albumCount']:
                 continue
