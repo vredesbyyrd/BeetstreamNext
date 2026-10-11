@@ -20,18 +20,18 @@ _You can_, however, have one user's likes/ratings persist inside the Beets libra
 
 Users permissions are [as defined](https://opensubsonic.netlify.app/docs/responses/user/) by the OpenSubsonic/Subsonic spec's _roles_. These roles can be set from the admin panel's **Users** tab (or `--update-user`/`update-user` on the CLI):
 
-| Role       | Default | Allows                                                          |
-|------------|---------|-----------------------------------------------------------------|
-| Admin      | off     | Full access to the admin panel and all settings                 |
-| Settings   | on      | Changing their own personal settings and password               |
-| Stream     | on      | Playing files                                                   |
-| Download   | off     | Downloading files                                               |
-| Playlists  | on      | Creating and deleting their own playlists                       |
-| Comments   | on      | Creating and editing comments and ratings                       |
-| Podcasts   | off     | Managing their own podcast subscriptions                        |
-| Sharing    | off     | Generating public shares (see [Sharing](public-shares.md))      |
-| Jukebox    | off     | Controlling jukebox-mode playback (see [Jukebox](./jukebox.md)) |
-| Scrobbling | on      | Keeping track of what they listen on BeetstreamNext             |
+| Role       | Default | Allows                                                               |
+|------------|---------|----------------------------------------------------------------------|
+| Admin      | off     | Full access to the admin panel and all settings                      |
+| Settings   | on      | Changing their own personal settings and password                    |
+| Stream     | on      | Playing files                                                        |
+| Download   | off     | Downloading files                                                    |
+| Playlists  | on      | Creating and deleting their own playlists                            |
+| Comments   | on      | Creating and editing comments and ratings                            |
+| Podcasts   | off     | Managing their own podcast subscriptions                             |
+| Sharing    | off     | Generating public shares (see [Sharing](public-shares.md))           |
+| Jukebox    | off     | Controlling jukebox-mode playback (see [Jukebox](./jukebox.md))      |
+| Scrobbling | on      | Keeping track of what they listen to (see [Scrobbling](#scrobbling)) |
 
 A new user account starts with the defaults above unless overridden at creation.
 
@@ -40,10 +40,17 @@ A new user account starts with the defaults above unless overridden at creation.
 
 ## User account page
 
-Users with the **Settings** role can sign in at `/login`, and can manage their avatar, email, password, API key, and internet radio stations, and (if they are allowed) their public shares and podcast subscriptions.
+Users with the **Settings** role can sign in at `/login`, and can manage their avatar, email, password, API key, scrobbling accounts and internet radio stations, and (if they are allowed) their public shares and podcast subscriptions.
 
 > [!IMPORTANT]
 > Unlike the admin panel, this is **not** restrictable by host (see [`admin_hostname`](../configuration.md#admin_hostname)). Admins who sign in from a hostname other than `admin_hostname` will see the non-admin view of their account.
+
+## Scrobbling
+
+Users can link their [Last.fm](https://www.last.fm) account from their account page (admins: from the admin panel's **Library** tab), and what they play is then scrobbled to it, with "now playing" updates.
+This needs [`lastfm_api_key`](../configuration.md#lastfm_api_key) and [`lastfm_api_secret`](../configuration.md#lastfm_api_secret) (both from a [Last.fm API account](https://www.last.fm/api/accounts)), and the user's **Scrobbling** role.
+
+Plays are queued and sent in the background: if Last.fm can't be reached, they are kept and sent later.
 
 ## Chat
 

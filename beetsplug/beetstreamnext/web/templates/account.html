@@ -123,6 +123,16 @@
             <div id="apiKeyResult"></div>
         </div>
 
+        {# Scrobbling #}
+        <div class="card" id="scrobbling">
+            <div class="table-header"><h2><span class="material-symbols-outlined">history</span>Scrobbling</h2></div>
+            <p class="card-hint">Link an account to send what you listen to on BeetstreamNext to it.</p>
+            <div id="scrobblingAccounts"
+                 hx-get="{{ url_for('account.route_scrobbling') }}"
+                 hx-trigger="load"
+                 hx-swap="innerHTML"></div>
+        </div>
+
         {# Shares #}
         {% if user.shareRole %}
             <div class="card">

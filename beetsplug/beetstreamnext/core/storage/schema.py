@@ -353,6 +353,36 @@ def initialise_db() -> None:
 
     cur.execute(
         """
+        CREATE TABLE IF NOT EXISTS scrobbler_accounts
+        (
+            username    TEXT NOT NULL,
+            service     TEXT NOT NULL, -- scrobbling service key, e.g. 'lastfm'
+            session_key BLOB NOT NULL, -- encrypted if BSN has an encryption key
+            account     TEXT NOT NULL, -- the user's name on that service
+            linked_at   REAL NOT NULL DEFAULT (unixepoch()),
+            PRIMARY KEY (username, service),
+            FOREIGN KEY (username) REFERENCES users (username) ON DELETE CASCADE
+        )
+        """
+    )
+
+    cur.execute(
+        """
+        -- plays waiting to be submitted to a scrobbling service
+        CREATE TABLE IF NOT EXISTS scrobble_queue
+        (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            username  TEXT    NOT NULL,
+            service   TEXT    NOT NULL,
+            track     TEXT    NOT NULL, -- JSON: artist, title, album... as the services take them
+            played_at INTEGER NOT NULL, -- unix timestamp
+            FOREIGN KEY (username) REFERENCES users (username) ON DELETE CASCADE
+        )
+        """
+    )
+
+    cur.execute(
+        """
         -- one row per (song, check kind): a background health scan's findings for a song.
         CREATE TABLE IF NOT EXISTS song_checks
         (
