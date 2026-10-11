@@ -16,7 +16,7 @@ from beetsplug.beetstreamnext.core.storage.cache import (
 )
 from beetsplug.beetstreamnext.core.media.images import tokenised_image_url
 from beetsplug.beetstreamnext.core.library.ids import IDs, TYPES_PLAYABLE
-from beetsplug.beetstreamnext.core.library.resolve import Resolve, standardise_datadict, get_artist_metadata
+from beetsplug.beetstreamnext.core.library.resolve import Resolve, beets_abspath, standardise_datadict, get_artist_metadata
 from beetsplug.beetstreamnext.utils.text import split_beets_multi, validate_mbid
 from beetsplug.beetstreamnext.utils.general import timestamp_to_iso, genres_formatter
 from beetsplug.beetstreamnext.core.runtime.web import external_url
@@ -549,7 +549,7 @@ class Serialise:
             # only hit the disk if bitrate/length missing
             if subsonic_song['size'] == 0:
                 try:
-                    subsonic_song['size'] = os.path.getsize(song_filepath)
+                    subsonic_song['size'] = os.path.getsize(beets_abspath(data))
                 except Exception:
                     pass
 
