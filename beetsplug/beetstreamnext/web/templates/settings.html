@@ -291,6 +291,15 @@
                         <div id="podcastChannels" hx-get="{{ url_for('admin.route_podcast_channels') }}"
                              hx-trigger="load" hx-swap="innerHTML"></div>
                     </div>
+                {% elif cat == 'library' %}
+                    <div class="card">
+                        <div class="table-header"><h2>My scrobbling</h2></div>
+                        <p class="card-hint">Link an account to send what you listen to on BeetstreamNext to it.</p>
+                        <div id="scrobblingAccounts"
+                             hx-get="{{ url_for('admin.route_scrobbling') }}"
+                             hx-trigger="load"
+                             hx-swap="innerHTML"></div>
+                    </div>
                 {% endif %}
             </section>
         {% endfor %}

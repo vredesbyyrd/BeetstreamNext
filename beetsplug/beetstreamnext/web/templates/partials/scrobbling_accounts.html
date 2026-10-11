@@ -1,0 +1,39 @@
+{% if message %}
+    <div class="flash flash-success">{{ message }}</div>
+{% endif %}
+{% for category, msg in get_flashed_messages(with_categories=true) %}
+    <div class="flash flash-{{ category if category in ('success', 'error', 'info') else 'info' }}">{{ msg }}</div>
+{% endfor %}
+
+{% if not enabled %}
+    <p class="empty-state">Scrobbling is turned off for your account.</p>
+{% else %}
+    {% for s in services %}
+        <div class="channel-row">
+            <div class="channel-row-header">
+                <div class="channel-row-info">
+                    <div class="username-name">{{ s.label }}</div>
+                    <div class="email-cell">
+                        {% if s.account %}
+                            Scrobbling as <strong>{{ s.account }}</strong>
+                        {% elif s.available %}
+                            Not connected
+                        {% else %}
+                            Not configured on this server
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="actions-cell">
+                    {% if s.account %}
+                        <button class="btn btn-outline"
+                                hx-post="{{ url_for(scrobbling_ep.disconnect, service=s.key) }}"
+                                hx-target="#scrobblingAccounts" hx-swap="innerHTML"
+                                hx-confirm="Stop scrobbling to {{ s.label }}?">Disconnect</button>
+                    {% elif s.available %}
+                        <a class="btn btn-primary" href="{{ url_for(scrobbling_ep.connect, service=s.key) }}">Connect</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    {% endfor %}
+{% endif %}
