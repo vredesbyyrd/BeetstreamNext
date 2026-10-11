@@ -60,7 +60,7 @@ class SettingsStore:
 
         # Simple app.config updates
         for k in ('trusted_hosts', 'legacy_auth',
-                  'never_transcode', 'lastfm_api_key',
+                  'never_transcode', 'lastfm_api_key', 'lastfm_api_secret',
                   'fetch_artists_images', 'save_artists_images',
                   'fetch_artists_biographies', 'save_album_art', 'follow_playlist_embedded_urls',
                   'fetch_lyrics', 'save_lyrics',

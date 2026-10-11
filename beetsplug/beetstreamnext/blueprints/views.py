@@ -5,6 +5,8 @@ import flask
 
 from beetsplug.beetstreamnext.core.media.shares import list_shares
 from beetsplug.beetstreamnext.core.services.radio import list_radios
+from beetsplug.beetstreamnext.core.services.scrobbling import SCROBBLERS, linked_accounts
+from beetsplug.beetstreamnext.core.accounts.users_crud import get_userdata
 from beetsplug.beetstreamnext.core.services.external.radio_browser import query_radio_browser
 
 
@@ -50,6 +52,30 @@ def render_radios(username: str, message: Optional[str] = None, bp_name: str = '
                                  message=message,
                                  ok=True,
                                  radio_ep=radio_endpoints(bp_name))
+
+
+##
+# Scrobbling
+
+def scrobbling_endpoints(bp_name: str) -> dict[str, str]:
+    """Endpoint names of the scrobbling routes registered on blueprint `bp_name`, for the templates."""
+    return {
+        'connect': f'{bp_name}.route_connect_scrobbler',
+        'disconnect': f'{bp_name}.route_disconnect_scrobbler',
+    }
+
+
+def render_scrobbling(username: str, message: Optional[str] = None, bp_name: str = 'admin') -> str:
+    linked = linked_accounts(username)
+    services = [
+        {'key': s.key, 'label': s.label, 'available': s.available(), 'account': linked.get(s.key)}
+        for s in SCROBBLERS.values()
+    ]
+    return flask.render_template('partials/scrobbling_accounts.html',
+                                 services=services,
+                                 enabled=bool(get_userdata(username, fields=['scrobblingEnabled']).get('scrobblingEnabled')),
+                                 message=message,
+                                 scrobbling_ep=scrobbling_endpoints(bp_name))
 
 
 def render_radio_discovery(query: Optional[str]) -> str:

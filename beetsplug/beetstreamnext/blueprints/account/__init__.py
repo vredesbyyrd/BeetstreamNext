@@ -7,6 +7,7 @@ from flask import Blueprint
 
 from beetsplug.beetstreamnext.blueprints.auth import session_roles, admin_here
 from beetsplug.beetstreamnext.blueprints.shared.radio import register_radio_routes
+from beetsplug.beetstreamnext.blueprints.shared.scrobbling import register_scrobbling_routes
 
 
 account_bp = Blueprint('account', __name__, url_prefix='/account')
@@ -36,3 +37,4 @@ from .routes import (
 
 # Admin panel and account page expose the same routes, only the auth decorator differs
 register_radio_routes(account_bp, account_required)
+register_scrobbling_routes(account_bp, account_required, lambda: flask.url_for('account.route_account') + '#scrobbling')
