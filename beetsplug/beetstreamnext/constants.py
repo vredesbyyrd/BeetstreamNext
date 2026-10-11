@@ -202,6 +202,7 @@ PART_MAX_AGE_SEC: int = 86400            # interrupted podcast '.part' downloads
 MAX_DECODE_PIXELS: int = 64 * 1024 * 1024    # 64 megapixels decode cap, ~8000x8000 px
 MAX_REMOTE_IMAGE_BYTES: int = 15 * 1024 * 1024
 RAW_ART_MAX_BYTES: int = 2 * 1024 * 1024     # local images above 2 MB are re-encoded even with no 'size' param
+ART_VERSION_RECHECK_SEC: int = 600           # album art files' mtimes (coverArt id versions) are rechecked after 10 min
 
 MAX_AVATAR_DIM: int = 512
 MAX_AVATAR_BYTES: int = 1 * 1024 * 1024      # 1 MB
