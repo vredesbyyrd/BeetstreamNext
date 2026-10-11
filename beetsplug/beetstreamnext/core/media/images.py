@@ -6,8 +6,9 @@ import subprocess
 import os
 import tempfile
 import threading
+import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional, Union, Dict, Tuple
 from io import BytesIO
 from PIL import Image, ImageOps
 import flask
@@ -18,7 +19,8 @@ from beetsplug.beetstreamnext.utils.text import strip_text, validate_mbid, split
 from beetsplug.beetstreamnext.utils.general import subprocess_env
 from beetsplug.beetstreamnext.utils.system import get_mimetype, make_hidden, find_binary, resolve_path
 from beetsplug.beetstreamnext.constants import (
-    MAX_DECODE_PIXELS, FFMPEG_INPUT_ARGS, RAW_ART_MAX_BYTES, AUDIO_EXTENSIONS, MAX_AVATAR_BYTES, MAX_AVATAR_DIM
+    MAX_DECODE_PIXELS, FFMPEG_INPUT_ARGS, RAW_ART_MAX_BYTES, AUDIO_EXTENSIONS, MAX_AVATAR_BYTES, MAX_AVATAR_DIM,
+    ART_VERSION_RECHECK_SEC
 )
 from beetsplug.beetstreamnext.constants import ALLOWED_THUMBNAIL_SIZES, COVER_EXTRACT_MAX_CONCURRENT, IMAGE_EXTENSIONS
 from beetsplug.beetstreamnext.core.runtime.logging import bsn_logger
@@ -82,6 +84,31 @@ def tokenised_image_url(subsonic_id: str, size: Optional[int] = None) -> str:
 
     token = image_tokeniser.register(f'{subsonic_id}|{size or ""}')
     return request_url(flask.url_for('public.tokenised_image', token=token))
+
+
+_art_versions: Dict[str, Tuple[str, float]] = {}    # art path -> (version, when checked)
+
+
+def album_art_version(album_data: dict) -> str:
+    """
+    Version of an album's art file (its mtime), for its coverArt ID. '' if it has none.
+    """
+    art_path = os.fsdecode(album_data.get('artpath') or b'')
+    if not art_path:
+        return ''
+
+    now = time.monotonic()
+    cached = _art_versions.get(art_path)
+    if cached and now - cached[1] < ART_VERSION_RECHECK_SEC:
+        return cached[0]
+
+    try:
+        version = f"{int(os.path.getmtime(resolve_path(art_path, app.config['music_root']))):x}"
+    except OSError:
+        version = ''
+
+    _art_versions[art_path] = (version, now)
+    return version
 
 
 def thumbnail_path(original_path: Path | str | bytes, size: int, mtime: float = None) -> Path:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import string
 from pathlib import Path
 from typing import Optional, Tuple, Any
 
@@ -45,6 +46,8 @@ class IDs:
     _ALB_ID_PREF = 'al-'         # legacy: al-<raw beets row id> (decode-only)
     _ALB_MBID_PREF = 'al-m-'     # al-m-<base64url(mb_albumid)>
     _ALB_HASH_PREF = 'al-h-'     # al-h-<hash of "albumartist\x1falbum">
+
+    _COVER_VERSION_SEP = '.'     # coverArt: <album id>.<art version>, so the id changes with the art
 
     _PLY_ID_PREF = 'pl-'
     _RAD_ID_PREF = 'ir-'
@@ -237,6 +240,23 @@ class IDs:
             return f"{cls._SNG_HASH_PREF}{hash}"
 
         return f"{cls._SNG_ID_PREF}{song.get('id', 0)}"
+
+    @classmethod
+    def encode_cover(cls, subsonic_id: str, version: str = '') -> str:
+        """
+        Mint a coverArt ID: the item's ID, plus a version that changes with its art (clients cache images by ID).
+        """
+        return f"{subsonic_id}{cls._COVER_VERSION_SEP}{version}" if version else subsonic_id
+
+    @classmethod
+    def decode_cover(cls, cover_id: str) -> str:
+        """
+        Decode a coverArt ID back to the ID of the item it pictures (anything else is returned as is).
+        """
+        base, sep, version = str(cover_id).rpartition(cls._COVER_VERSION_SEP)
+        if sep and version and set(version) <= set(string.hexdigits) and cls.decode_type(base) == 'album':
+            return base
+        return cover_id
 
     @classmethod
     def encode_playlist(cls, dir_id: int, stem_suffix: str, owner: Optional[str] = None) -> str:
