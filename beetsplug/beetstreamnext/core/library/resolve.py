@@ -14,7 +14,7 @@ from beetsplug.beetstreamnext.core.storage.connection import database
 from beetsplug.beetstreamnext.core.library.ids import IDs, TYPES_PLAYABLE
 from beetsplug.beetstreamnext.utils.text import split_beets_multi, validate_mbid
 from beetsplug.beetstreamnext.utils.system import path_hash, resolve_path
-from beetsplug.beetstreamnext.utils.db import get_beets_schema, chunked_query
+from beetsplug.beetstreamnext.utils.db import get_beets_schema
 
 
 def beets_abspath(item: Dict | Item | Any) -> Path:
@@ -183,6 +183,53 @@ def get_artist_metadata(name: str) -> dict:
 
 ##
 # Resolver: Decodes a Subsonic ID and fetches the Beets/db object it refers to
+
+
+class _SongIndex:
+    """
+    Song IDs of the whole beets library, read in one pass.
+
+    MBIDs aren't indexed in the items table and hash IDs need every candidate's path
+    hashed, so resolving either per request is a full scan of the items table.
+    """
+
+    def __init__(self, lib):
+        root_directory = app.config['root_directory']
+
+        # Several songs can share one ID: the last one in the table answers for it
+        self.by_mbid: Dict[str, int] = {}
+        self.by_hash: Dict[str, int] = {}
+        self.ids: set = set()
+
+        with lib.transaction() as tx:
+            for beets_id, path, release_track_id, track_id in tx.query(
+                    """
+                    SELECT id, path, mb_releasetrackid, mb_trackid
+                    FROM items
+                    ORDER BY id
+                    """):
+                self.ids.add(beets_id)
+                mbid = release_track_id or track_id
+                if mbid:
+                    self.by_mbid[mbid] = beets_id
+                else:
+                    self.by_hash[path_hash(path, root_directory)] = beets_id
+
+
+_song_index: Optional[Tuple[float, _SongIndex]] = None
+
+
+def _get_song_index() -> _SongIndex:
+    global _song_index
+
+    mtime = os.path.getmtime(os.fsdecode(flask.g.lib.path))
+    cached = _song_index
+    if cached is None or cached[0] != mtime:
+        # No lock: a concurrent duplicate build is harmless, but holding a lock while
+        # waiting on beets' own transaction lock could deadlock
+        cached = _song_index = (mtime, _SongIndex(flask.g.lib))
+
+    return cached[1]
 
 
 class Resolve:
@@ -393,59 +440,24 @@ class Resolve:
         Batched song resolving, without loading the songs. Returns {id: beets_id}.
         """
 
+        index = _get_song_index()
         result: Dict[str, int] = {}
-
-        by_mbid: Dict[str, List[str]] = {}
-        by_hash: Dict[str, List[str]] = {}
-        by_int: Dict[int, List[str]] = {}
 
         for raw in subsonic_ids:
             sid = str(raw)
             value, kind = IDs.decode_song(sid)
 
             if kind == 'mbid':
-                by_mbid.setdefault(value, []).append(sid)
+                beets_id = index.by_mbid.get(value)
             elif kind == 'hash':
-                by_hash.setdefault(value, []).append(sid)
+                beets_id = index.by_hash.get(value)
             elif kind == 'legacy_int':
-                by_int.setdefault(value, []).append(sid)
+                beets_id = value if value in index.ids else None
+            else:
+                beets_id = None
 
-        if by_mbid:
-            # One pass: the mbid columns aren't indexed, so IN queries would each scan the table anyway
-            with flask.g.lib.transaction() as tx:
-                rows = tx.query(
-                    """
-                    SELECT id, mb_releasetrackid, mb_trackid
-                    FROM items
-                    """
-                )
-            for row in rows:
-                for sid in by_mbid.get(row[1] or row[2], []):
-                    result[sid] = row[0]
-
-        if by_hash:
-            root_directory = app.config['root_directory']
-            with flask.g.lib.transaction() as tx:
-                candidates = tx.query(
-                    """
-                    SELECT id, path
-                    FROM items
-                    WHERE (mb_releasetrackid IS NULL OR mb_releasetrackid = '')
-                      AND (mb_trackid IS NULL OR mb_trackid = '')
-                    """
-                )
-            for row in candidates:
-                h = path_hash(row[1], root_directory)
-                if h in by_hash:
-                    for sid in by_hash[h]:
-                        result[sid] = row[0]
-
-        if by_int:
-            with flask.g.lib.transaction() as tx:
-                rows = chunked_query(tx, 'SELECT id FROM items WHERE id IN ({q})', list(by_int))
-            for row in rows:
-                for sid in by_int.get(row[0], []):
-                    result[sid] = row[0]
+            if beets_id is not None:
+                result[sid] = beets_id
 
         return result
 
