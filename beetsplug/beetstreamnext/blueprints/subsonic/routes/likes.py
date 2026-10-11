@@ -130,12 +130,19 @@ def endpoint_get_starred() -> flask.Response:
         ).fetchall()
 
     song_ids_ordered = [row['item_id'] for row in song_id_rows]
-    resolved = Resolve.songs(song_ids_ordered)
-    song_items = [resolved[sid] for sid in song_ids_ordered if sid in resolved]
+    beets_ids = Resolve.song_ids(song_ids_ordered)
 
-    preload_songs(song_items)
+    # Plain rows: building a beets Item per song takes seconds for a long starred list
+    with flask.g.lib.transaction() as tx:
+        sql_query = 'SELECT * FROM items WHERE id IN ({q})'
+        rows = chunked_query(db_obj=tx, query_template=sql_query, chunked_values=list(set(beets_ids.values())))
 
-    songs = [Serialise.song(item) for item in song_items]
+    id_map = {row['id']: row for row in rows}
+    song_rows = [id_map[beets_ids[sid]] for sid in song_ids_ordered if beets_ids.get(sid) in id_map]
+
+    preload_songs(song_rows)
+
+    songs = [Serialise.song(row) for row in song_rows]
     album_dicts = []
     for row in album_id_rows:
         album = Resolve.album(row['item_id'])       # current ids (mbid / hash) as well as legacy ones
