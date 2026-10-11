@@ -201,7 +201,7 @@ def endpoint_get_top_songs() -> flask.Response:
 
     if app.config['lastfm_api_key']:
         if artist_mbid:
-            lastfm_resp = query_lastfm(q=artist_mbid, data_type='artist', method='TopTracks', is_mbid=True)
+            lastfm_resp = query_lastfm(q=artist_mbid, data_type='artist', method='TopTracks', is_mbid=True, name=artist_name)
         else:
             lastfm_resp = query_lastfm(q=artist_name, data_type='artist', method='TopTracks', is_mbid=False)
 
@@ -279,7 +279,8 @@ def _similar_by_track(req_id: str, req_artist_name: str, limit: int) -> Dict[int
     song_mbid = validate_mbid(song_item.get('mb_releasetrackid')) or validate_mbid(song_item.get('mb_trackid'))
 
     if song_mbid:
-        lastfm_resp = query_lastfm(q=song_mbid, data_type='track', method='similar', is_mbid=True)
+        lastfm_resp = query_lastfm(q=song_mbid, data_type='track', method='similar', is_mbid=True,
+                                   name=song_title, artist=req_artist_name)
     else:
         lastfm_resp = query_lastfm(q=song_title, data_type='track', method='similar', is_mbid=False, artist=req_artist_name)
 
@@ -341,7 +342,7 @@ def endpoint_get_similar_songs() -> flask.Response:
 
         if app.config['lastfm_api_key']:
             if req_artist_mbid:
-                lastfm_resp = query_lastfm(q=req_artist_mbid, data_type='artist', method='similar', is_mbid=True)
+                lastfm_resp = query_lastfm(q=req_artist_mbid, data_type='artist', method='similar', is_mbid=True, name=req_artist_name)
             else:
                 lastfm_resp = query_lastfm(q=req_artist_name, data_type='artist', method='similar', is_mbid=False)
 
