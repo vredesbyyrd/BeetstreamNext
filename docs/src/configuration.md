@@ -448,6 +448,20 @@ Last.fm API key for fetching metadata.
 
 ---
 
+### `lastfm_api_secret`
+
+Shared secret of the Last.fm API key, needed for users to link their Last.fm accounts and scrobble.
+
+<span style="color:#6b5c58">**sensitive**</span>
+
+*type:* `str`
+
+*default:* *(empty)*
+
+*env:* `BSN_LASTFM_API_SECRET`
+
+---
+
 ### `fetch_artists_images`
 
 Fetch missing artist images from external services.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import requests
 
 from beetsplug.beetstreamnext.application import app
@@ -67,5 +68,21 @@ def test_lastfm_connection() -> tuple[bool, str]:
         return False, payload.get('message', 'Last.fm rejected the API key.')
     if not response.ok:
         return False, f'Last.fm returned HTTP {response.status_code}.'
+
+    api_secret = settings_store.get('lastfm_api_secret')
+    if not api_secret:
+        return True, "Connected to Last.fm successfully (no API secret, so users can't scrobble)."
+
+    # A signed call with a dummy token: Last.fm checks the signature (so the secret) before the token
+    params = {'api_key': api_key, 'method': 'auth.getSession', 'token': '0'}
+    params['api_sig'] = hashlib.md5((''.join(k + params[k] for k in sorted(params)) + api_secret).encode('utf-8'), usedforsecurity=False).hexdigest()
+
+    try:
+        payload = requests.get(endpoint, headers=headers, params=params | {'format': 'json'}, timeout=8).json()
+    except (requests.exceptions.RequestException, ValueError) as e:
+        return False, f'Could not check the Last.fm API secret: {e}'
+
+    if isinstance(payload, dict) and payload.get('error') == 13:    # invalid method signature
+        return False, 'Last.fm rejected the API secret.'
 
     return True, 'Connected to Last.fm successfully.'
