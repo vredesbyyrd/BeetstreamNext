@@ -147,36 +147,17 @@ def endpoint_get_starred() -> flask.Response:
     song_counts = get_song_counts(album_dicts)
     albums = [Serialise.album(row, include_songs=False, song_counts=song_counts) for row in album_dicts]
 
-    mbids_to_resolve = []
     beets_artist_names = []
     for row in artist_rows:
         value, kind = IDs.decode_artist(row[0])
         if not value:
             continue
-        if kind == 'mbid':
-            mbids_to_resolve.append(value)
-        elif kind == 'hash':
+        if kind in ('mbid', 'hash'):
             resolved = Resolve.artist(row[0])
             if resolved:
                 beets_artist_names.append(resolved[0])
         else:
             beets_artist_names.append(value)
-
-    if mbids_to_resolve:
-        with flask.g.lib.transaction() as tx:
-            rows = chunked_query(
-                db_obj=tx,
-                query_template="""
-                SELECT albumartist, albumartists
-                FROM albums
-                WHERE mb_albumartistid IN ({q})
-                GROUP BY albumartist
-                """,
-                chunked_values=mbids_to_resolve
-            )
-        # Prefer solo credit for each MBID (an artist can come back from more than one chunk)
-        solo_names = [r[0] for r in rows if r[0] and not IDs.is_joint_credit(r[1], r[0])]
-        beets_artist_names.extend(dict.fromkeys(solo_names or (r[0] for r in rows if r[0])))
 
     prefetched = {}
     if beets_artist_names:
