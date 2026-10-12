@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import threading
 from abc import ABC, abstractmethod
-from typing import Dict, Tuple
+from collections import Counter
+from typing import Dict, List, Tuple
 
 import flask
 
 from beetsplug.beetstreamnext.application import app
+from beetsplug.beetstreamnext.core.library.ids import IDs
 from beetsplug.beetstreamnext.utils.concurrency import BuildOnce
 from beetsplug.beetstreamnext.utils.db import get_beets_schema, library_cache
 from beetsplug.beetstreamnext.utils.system import path_hash
@@ -55,9 +57,12 @@ class ArtistIndex(Index):
         def column(*names: str) -> str:
             return next((n for n in names if n in cols), 'NULL')
 
-        # name -> (mbid, sort name) of the first album/song credited
+        # name -> (mbid, sort name): an album artist's own MBID (see _assign_mbids) and its first album's
+        # sort name, a song artist's first song's
         self._album_artists: Dict[str, Tuple[str, str]] = {}
         self._song_artists: Dict[str, Tuple[str, str]] = {}
+        self._joint_credits = set()
+        album_mbids: Dict[str, Counter] = {}
 
         multi_artists = set()
         composers = set()
@@ -66,7 +71,7 @@ class ArtistIndex(Index):
         with lib.transaction() as tx:
             album_rows = tx.query(
                 """
-                SELECT albumartist, mb_albumartistid, albumartist_sort
+                SELECT albumartist, mb_albumartistid, albumartist_sort, albumartists
                 FROM albums
                 ORDER BY id
                 """)
@@ -79,8 +84,14 @@ class ArtistIndex(Index):
                 ORDER BY id
                 """)  # nosec B608
 
-        for name, mbid, sort_name in album_rows:
-            self._album_artists.setdefault(name, (mbid, sort_name))
+        for name, mbid, sort_name, credited in album_rows:
+            self._album_artists.setdefault(name, ('', sort_name))
+            counts = album_mbids.setdefault(name, Counter())
+            mbid = validate_mbid(mbid)
+            if mbid:
+                counts[mbid] += 1
+            if IDs.is_joint_credit(credited, name):
+                self._joint_credits.add(name)
 
         for name, mbid, sort_name, artists, comp, lyr in song_rows:
             self._song_artists.setdefault(name, (mbid, sort_name))
@@ -93,7 +104,36 @@ class ArtistIndex(Index):
         self._composers = self._names(composers)
         self._lyricists = self._names(lyricists)
 
+        self.artist_by_mbid = self._assign_mbids(album_mbids)
+        for mbid, name in self.artist_by_mbid.items():
+            self._album_artists[name] = (mbid, self._album_artists[name][1])
+
         self._metadata: Dict[str, dict] = {}
+
+    def _assign_mbids(self, album_mbids: Dict[str, Counter]) -> Dict[str, str]:
+        """
+        MBID -> the album artist it identifies: the MBID most of the artist's albums carry (its first
+        song's if none do), each going to the artist with the most albums behind it. An artist left
+        without one, or a joint credit, is known by its name.
+        """
+        claims: Dict[str, List[str]] = {}
+        for name, counts in album_mbids.items():
+            if not name or name in self._joint_credits:
+                continue
+            mbids = [mbid for mbid, _ in counts.most_common()]     # ties: the earliest album's first
+            song_mbid = validate_mbid(self._song_artists.get(name, ('', ''))[0])
+            if song_mbid and song_mbid not in mbids:
+                mbids.append(song_mbid)
+            if mbids:
+                claims[name] = mbids
+
+        artist_by_mbid: Dict[str, str] = {}
+        for name in sorted(claims, key=lambda n: -album_mbids[n][claims[n][0]]):
+            mbid = next((m for m in claims[name] if m not in artist_by_mbid), None)
+            if mbid:
+                artist_by_mbid[mbid] = name
+
+        return artist_by_mbid
 
     @staticmethod
     def _names(values: set) -> set:
@@ -115,15 +155,14 @@ class ArtistIndex(Index):
         album_row = self._album_artists.get(name)
         if album_row is not None:
             roles.append('albumartist')
-            if album_row[0]:
-                mbid = validate_mbid(album_row[0])
+            mbid = album_row[0]
             if album_row[1]:
                 sort_name = album_row[1]
 
         song_row = self._song_artists.get(name)
         if song_row is not None:
             roles.append('artist')
-            if not mbid and song_row[0]:
+            if album_row is None and song_row[0]:
                 mbid = validate_mbid(song_row[0])
             if not sort_name and song_row[1]:
                 sort_name = song_row[1]
@@ -139,7 +178,8 @@ class ArtistIndex(Index):
         return {
             'mbid': mbid,
             'sort_name': sort_name or name,
-            'roles': roles if roles else ['artist']
+            'roles': roles if roles else ['artist'],
+            'joint': name in self._joint_credits,
         }
 
     @classmethod
