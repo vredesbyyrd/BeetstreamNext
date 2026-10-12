@@ -6,6 +6,8 @@ from .. import subsonic_bp
 
 from beetsplug.beetstreamnext.core.storage.cache import preload_songs, preload_albums, preload_artists, get_song_counts
 from beetsplug.beetstreamnext.utils.text import remove_accents, safe_str, split_beets_multi
+from beetsplug.beetstreamnext.utils.db import chunked_query
+from beetsplug.beetstreamnext.core.library.search import search_index, search_words
 from beetsplug.beetstreamnext.blueprints.subsonic.responses import subsonic_response, subsonic_error
 from beetsplug.beetstreamnext.core.library.serialise import Serialise
 
@@ -62,6 +64,7 @@ def endpoint_search() -> flask.Response:
         return subsonic_response({tag: {}}, resp_fmt=resp_fmt)
 
     artist_prefetch = {}
+    artist_rows = []
 
     # Beets query
     if main_query.startswith(('b:', 'beets:')):
@@ -85,7 +88,35 @@ def endpoint_search() -> flask.Response:
         except Exception:
             return subsonic_error(70, resp_fmt=resp_fmt)
 
-    # Normal SQL search
+    # Free text: every word of the query in a song's, album's or artist's credits
+    elif not (depr_artist or depr_album or depr_song or newer_than):
+        words = search_words(main_query)
+        if main_query and not words:        # nothing left to search for, e.g. only punctuation
+            song_ids, album_ids, artists = [], [], []
+        else:
+            song_ids, album_ids, artists = search_index().find(words)
+
+        song_ids = song_ids[song_offset: song_offset + song_count]
+        album_ids = album_ids[album_offset: album_offset + album_count]
+        artists = artists[artist_offset: artist_offset + artist_count]
+
+        with flask.g.lib.transaction() as tx:
+            song_rows = {row['id']: row for row in chunked_query(tx, 'SELECT * FROM items WHERE id IN ({q})', song_ids)}
+            album_rows = {row['id']: row for row in chunked_query(tx, 'SELECT * FROM albums WHERE id IN ({q})', album_ids)}
+            artist_rows = chunked_query(
+                tx,
+                """
+                SELECT albumartist, COUNT(*), mb_albumartistid, albumartist_sort, MAX(albumartists)
+                FROM albums
+                WHERE albumartist IN ({q})
+                GROUP BY albumartist
+                """, artists
+            )
+
+        songs = [song_rows[i] for i in song_ids if i in song_rows]
+        albums = [album_rows[i] for i in album_ids if i in album_rows]
+
+    # Field filters of the deprecated search (artist, album, title, newerThan)
     else:
         def build_where(table_type: str, main_field: str) -> Tuple[str, List[str]]:
             # table_type: 'items' or 'albums'
@@ -164,15 +195,13 @@ def endpoint_search() -> flask.Response:
                 """, params + [artist_count, artist_offset]
             )
         artist_rows = list(rows)
+        artists = [row[0] for row in artist_rows]
 
-        artists = []
-        for row in artist_rows:
-            name, count, mbid, sort_name, albumartists_raw = row
-            artists.append(name)
-            is_joint = len(split_beets_multi(albumartists_raw or name)) > 1
-            artist_prefetch[name] = {
-                'album_count': count, 'mbid': mbid, 'sort_name': sort_name, 'is_joint': is_joint
-            }
+    for name, count, mbid, sort_name, albumartists_raw in artist_rows:
+        is_joint = len(split_beets_multi(albumartists_raw or name)) > 1
+        artist_prefetch[name] = {
+            'album_count': count, 'mbid': mbid, 'sort_name': sort_name, 'is_joint': is_joint
+        }
 
     song_counts = get_song_counts(albums)
 
