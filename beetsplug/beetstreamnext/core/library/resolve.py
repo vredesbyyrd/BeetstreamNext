@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 import string
+from collections import Counter
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List, Any, Sequence, Callable
 import flask
@@ -73,19 +74,28 @@ class _ArtistIndex:
         comp_col = 'composers' if 'composers' in cols else ('composer' if 'composer' in cols else 'NULL')
         lyr_col = 'lyricists' if 'lyricists' in cols else ('lyricist' if 'lyricist' in cols else 'NULL')
 
-        # name -> (mbid, sort name) of the first album/song credited to it
+        # name -> (mbid, sort name): an album artist's own MBID (see _assign_mbids) and its first album's
+        # sort name, a song artist's first song's
         self._album_artists: Dict[str, Tuple[str, str]] = {}
         self._song_artists: Dict[str, Tuple[str, str]] = {}
+        self._joint_credits = set()
+        album_mbids: Dict[str, Counter] = {}
         multi_artists, composers, lyricists = set(), set(), set()
 
         with lib.transaction() as tx:
-            for name, mbid, sort_name in tx.query(
+            for name, mbid, sort_name, credited in tx.query(
                     """
-                    SELECT albumartist, mb_albumartistid, albumartist_sort
+                    SELECT albumartist, mb_albumartistid, albumartist_sort, albumartists
                     FROM albums
                     ORDER BY id
                     """):
-                self._album_artists.setdefault(name, (mbid, sort_name))
+                self._album_artists.setdefault(name, ('', sort_name))
+                counts = album_mbids.setdefault(name, Counter())
+                mbid = validate_mbid(mbid)
+                if mbid:
+                    counts[mbid] += 1
+                if IDs.is_joint_credit(credited, name):
+                    self._joint_credits.add(name)
 
             for name, mbid, sort_name, artists, comp, lyr in tx.query(
                     f"""
@@ -102,7 +112,36 @@ class _ArtistIndex:
         self._composers = self._searchable(composers)
         self._lyricists = self._searchable(lyricists)
 
+        self.artist_by_mbid = self._assign_mbids(album_mbids)
+        for mbid, name in self.artist_by_mbid.items():
+            self._album_artists[name] = (mbid, self._album_artists[name][1])
+
         self._metadata: Dict[str, dict] = {}
+
+    def _assign_mbids(self, album_mbids: Dict[str, Counter]) -> Dict[str, str]:
+        """
+        MBID -> the album artist it identifies: the MBID most of the artist's albums carry (its first
+        song's if none do), each going to the artist with the most albums behind it. An artist left
+        without one, or a joint credit, is known by its name.
+        """
+        claims: Dict[str, List[str]] = {}
+        for name, counts in album_mbids.items():
+            if not name or name in self._joint_credits:
+                continue
+            mbids = [mbid for mbid, _ in counts.most_common()]     # ties: the earliest album's first
+            song_mbid = validate_mbid(self._song_artists.get(name, ('', ''))[0])
+            if song_mbid and song_mbid not in mbids:
+                mbids.append(song_mbid)
+            if mbids:
+                claims[name] = mbids
+
+        artist_by_mbid: Dict[str, str] = {}
+        for name in sorted(claims, key=lambda n: -album_mbids[n][claims[n][0]]):
+            mbid = next((m for m in claims[name] if m not in artist_by_mbid), None)
+            if mbid:
+                artist_by_mbid[mbid] = name
+
+        return artist_by_mbid
 
     @staticmethod
     def _searchable(values: set) -> str:
@@ -127,15 +166,14 @@ class _ArtistIndex:
         album_row = self._album_artists.get(name)
         if album_row is not None:
             roles.append('albumartist')
-            if album_row[0]:
-                mbid = validate_mbid(album_row[0])
+            mbid = album_row[0]
             if album_row[1]:
                 sort_name = album_row[1]
 
         song_row = self._song_artists.get(name)
         if song_row is not None:
             roles.append('artist')
-            if not mbid and song_row[0]:
+            if album_row is None and song_row[0]:
                 mbid = validate_mbid(song_row[0])
             if not sort_name and song_row[1]:
                 sort_name = song_row[1]
@@ -153,7 +191,8 @@ class _ArtistIndex:
         return {
             'mbid': mbid,
             'sort_name': sort_name or name,
-            'roles': roles if roles else ['artist']
+            'roles': roles if roles else ['artist'],
+            'joint': name in self._joint_credits,
         }
 
 
@@ -161,24 +200,54 @@ class _ArtistIndex:
 _artist_index: Optional[Tuple[float, _ArtistIndex]] = None
 
 
-def get_artist_metadata(name: str) -> dict:
-    """
-    Lookup MBID, sort name and roles for a given artist name.
-    The returned dict is shared: don't mutate it.
-    """
+def _get_artist_index() -> _ArtistIndex:
     global _artist_index
 
+    # Looked up for every artist a response credits: check the db once per request
+    index = flask.g.get('_artist_index')
+    if index is None:
+        mtime = os.path.getmtime(os.fsdecode(flask.g.lib.path))
+        cached = _artist_index
+        if cached is None or cached[0] != mtime:
+            # No lock: a concurrent duplicate build is harmless, but holding a lock while
+            # waiting on beets' own transaction lock could deadlock
+            cached = _artist_index = (mtime, _ArtistIndex(flask.g.lib))
+        index = flask.g._artist_index = cached[1]
+
+    return index
+
+
+def get_artist_metadata(name: str) -> dict:
+    """
+    Lookup MBID, sort name, roles and whether it's a joint credit for a given artist name.
+    The returned dict is shared: don't mutate it.
+    """
+
     if not name:
-        return {'mbid': '', 'sort_name': '', 'roles': []}
+        return {'mbid': '', 'sort_name': '', 'roles': [], 'joint': False}
 
-    mtime = os.path.getmtime(os.fsdecode(flask.g.lib.path))
-    cached = _artist_index
-    if cached is None or cached[0] != mtime:
-        # No lock: a concurrent duplicate build is harmless, but holding a lock while
-        # waiting on beets' own transaction lock could deadlock
-        cached = _artist_index = (mtime, _ArtistIndex(flask.g.lib))
+    return _get_artist_index().metadata(name)
 
-    return cached[1].metadata(name)
+
+def artist_identity(name: str, mbid: str = '', joint_credit: bool = False) -> Tuple[str, str]:
+    """
+    (Subsonic ID, MBID) of the artist credited as name. A library album artist has the same ones
+    wherever it's credited, whatever the album or song at hand carries; any other name keeps the
+    MBID and joint credit it comes with.
+    """
+    meta = get_artist_metadata(name)
+    if 'albumartist' in meta['roles']:
+        mbid, joint_credit = meta['mbid'], meta['joint']
+
+    mbid = validate_mbid(mbid)
+    if joint_credit:
+        return IDs.encode_artist(name, joint_credit=True), mbid
+    return IDs.encode_artist(mbid or name, is_mbid=bool(mbid)), mbid
+
+
+def album_artist_by_mbid(mbid: str) -> Optional[str]:
+    """The library album artist whose ID carries this MBID (see artist_identity)."""
+    return _get_artist_index().artist_by_mbid.get(mbid)
 
 
 ##
@@ -234,6 +303,10 @@ class Resolve:
             value, kind = req_id, 'name'
 
         if kind == 'mbid':
+            artist_name = album_artist_by_mbid(value)
+            if artist_name:
+                return artist_name, value
+
             with flask.g.lib.transaction() as tx:
                 # Prefer solo credit row for this MBID over a joint one
                 rows = tx.query(

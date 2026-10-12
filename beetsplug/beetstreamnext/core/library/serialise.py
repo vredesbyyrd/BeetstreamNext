@@ -16,7 +16,7 @@ from beetsplug.beetstreamnext.core.storage.cache import (
 )
 from beetsplug.beetstreamnext.core.media.images import tokenised_image_url
 from beetsplug.beetstreamnext.core.library.ids import IDs, TYPES_PLAYABLE
-from beetsplug.beetstreamnext.core.library.resolve import Resolve, standardise_datadict, get_artist_metadata
+from beetsplug.beetstreamnext.core.library.resolve import Resolve, standardise_datadict, get_artist_metadata, artist_identity
 from beetsplug.beetstreamnext.utils.text import split_beets_multi, validate_mbid
 from beetsplug.beetstreamnext.utils.general import timestamp_to_iso, genres_formatter
 from beetsplug.beetstreamnext.core.runtime.web import external_url
@@ -59,7 +59,7 @@ def _get_artists(data: dict) -> Tuple[List[Dict], List[Dict], List[Dict], str]:
                 meta = get_artist_metadata(name)
                 mbid = meta['mbid']
 
-            contributor_id = IDs.encode_artist(mbid or name, is_mbid=bool(mbid))
+            contributor_id, _ = artist_identity(name, mbid)
             if is_contributor:
                 dedup_key = (contributor_id, role)
                 if dedup_key not in seen_set:
@@ -144,10 +144,7 @@ class Serialise:
         main_ar_mbid = validate_mbid(data.get('mb_albumartistid')) or validate_mbid(data.get('mb_artistid'))
         main_ar_multi = data.get('albumartists') or data.get('artists') or ''
 
-        if IDs.is_joint_credit(main_ar_multi, main_ar_name):
-            artist_id = IDs.encode_artist(main_ar_name, joint_credit=True)
-        else:
-            artist_id = IDs.encode_artist(main_ar_mbid or main_ar_name, is_mbid=bool(main_ar_mbid))
+        artist_id, _ = artist_identity(main_ar_name, main_ar_mbid, IDs.is_joint_credit(main_ar_multi, main_ar_name))
 
         artists, album_artists, contributors, display_composer = _get_artists(data)
 
@@ -233,14 +230,10 @@ class Serialise:
                 is_joint = IDs.is_joint_credit(row[3], artist_name)
 
         meta = get_artist_metadata(artist_name)
-        mbid = validate_mbid(mbid) or meta['mbid']  # meta['mbid'] is already validated by _artist_metadata()
         sort_name = sort_name if sort_name != artist_name else meta['sort_name']
         roles = meta['roles']
 
-        if is_joint:
-            subsonic_artist_id = IDs.encode_artist(artist_name, joint_credit=True)
-        else:
-            subsonic_artist_id = IDs.encode_artist(mbid or artist_name, is_mbid=bool(mbid))
+        subsonic_artist_id, mbid = artist_identity(artist_name, validate_mbid(mbid) or meta['mbid'], is_joint)
 
         subsonic_artist = {
             'id': subsonic_artist_id,
