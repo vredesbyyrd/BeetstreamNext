@@ -83,7 +83,7 @@ See [Beets import](../features/beets-import.md) for the details.
 
 ### Maintenance
 
-Trigger a library health scan (see [Encoding errors detection & self-healing streams](../features/streaming.md#encoding-errors-detection--self-healing-streams)), cleanup BeetstreamNext's database, clear disk caches, and view the server logs.
+Trigger a library health scan (see [Encoding errors detection & self-healing streams](../features/streaming.md#encoding-errors-detection--self-healing-streams)), cleanup BeetstreamNext's database, clear disk caches, recheck cover art, and view the server logs.
 
 
 

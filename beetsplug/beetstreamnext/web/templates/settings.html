@@ -447,6 +447,13 @@
                         <button type="submit" class="btn btn-outline">Clear thumbnails &amp; HTTP cache</button>
                     </form>
 
+                    <form hx-post="{{ url_for('admin.route_recheck_cover_art') }}"
+                          hx-target="#cache-result"
+                          hx-swap="innerHTML">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-outline">Recheck cover art</button>
+                    </form>
+
                     <form hx-post="{{ url_for('admin.route_cleanup_offlines') }}"
                           hx-trigger="confirmed"
                           hx-target="#cache-result"

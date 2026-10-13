@@ -6,6 +6,7 @@ from .. import admin_bp, admin_required, back_to
 
 from beetsplug.beetstreamnext.core.runtime.logging import bsn_logger, mem_log
 from beetsplug.beetstreamnext.core.library.maintenance import clear_requests_caches, sweep_stale_references, clear_offline_files
+from beetsplug.beetstreamnext.core.media.images import forget_art_versions
 from beetsplug.beetstreamnext.core.library.health import start_health_scan, is_health_scanning, health_stats, flagged_songs
 from beetsplug.beetstreamnext.core.services.external.audiomuse import start_audiomuse_analysis
 from beetsplug.beetstreamnext.core.library.beets_interaction import read_config, write_config
@@ -38,6 +39,14 @@ def route_clear_cache() -> str:
     if cleared:
         return flask.render_template('partials/action_result.html', message=f"Cleared: {', '.join(cleared)}.", ok=True)
     return flask.render_template('partials/action_result.html', message='Nothing to clear.', ok=None)
+
+
+@admin_bp.route('/maintenance/recheck-cover-art', methods=['POST'])
+@admin_required
+def route_recheck_cover_art() -> str:
+    forget_art_versions()
+    message = 'Cover art will be checked again on the next requests.'
+    return flask.render_template('partials/action_result.html', message=message, ok=True)
 
 
 @admin_bp.route('/maintenance/database-cleanup', methods=['POST'])

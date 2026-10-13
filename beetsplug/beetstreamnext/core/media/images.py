@@ -7,7 +7,7 @@ import os
 import tempfile
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Union, Dict, Tuple
+from typing import TYPE_CHECKING, Optional, Union, Dict, Set, Tuple
 from io import BytesIO
 from PIL import Image, ImageOps
 import flask
@@ -25,7 +25,7 @@ from beetsplug.beetstreamnext.core.runtime.logging import bsn_logger
 from beetsplug.beetstreamnext.core.services.external.deezer import query_deezer
 from beetsplug.beetstreamnext.core.services.external.musicbrainz import query_coverartarchive
 from beetsplug.beetstreamnext.core.services.external.session import capped_image_fetch
-from beetsplug.beetstreamnext.core.media.artist_images import find_uploaded_image
+from beetsplug.beetstreamnext.core.media.artist_images import find_uploaded_image, uploaded_at
 from beetsplug.beetstreamnext.core.storage.connection import database
 
 if TYPE_CHECKING:
@@ -107,6 +107,42 @@ def album_art_version(album_data: dict) -> str:
 
     _art_versions[art_path] = (version, now)
     return version
+
+
+_artist_art_versions: Dict[str, Tuple[str, float]] = {}     # artist name -> (version, when checked)
+
+
+def artist_art_version(artist_name: str, mbid: str = '') -> str:
+    """
+    Version of an artist's local image (its upload time, or its file's mtime), for its coverArt ID.
+    '' if it has none: images from Deezer aren't versioned.
+    """
+    now = time.monotonic()
+    cached = _artist_art_versions.get(artist_name)
+    if cached and now - cached[1] < ART_VERSION_RECHECK_SEC:
+        return cached[0]
+
+    uploaded = uploaded_at(artist_name, mbid)
+    if uploaded:
+        version = f'{int(uploaded):x}'
+    else:
+        folder_image = _image_from_artist_folder(artist_name)
+        try:
+            version = f'{int(folder_image.stat().st_mtime):x}' if folder_image else ''
+        except OSError:
+            version = ''
+
+    _artist_art_versions[artist_name] = (version, now)
+    return version
+
+
+def forget_art_versions() -> None:
+    """Makes the next responses check every art file again for coverArt IDs, and search artists' folders again."""
+    global _artist_folders
+
+    _art_versions.clear()
+    _artist_art_versions.clear()
+    _artist_folders = None
 
 
 def thumbnail_path(original_path: Path | str | bytes, size: int, mtime: float = None) -> Path:
@@ -519,23 +555,54 @@ def playlist_mosaic(playlist: 'Playlist', size: int = 500) -> BytesIO | None:
     return out
 
 
+class _ArtistFolders:
+    """
+    Folders of every album artist's albums, read in one pass, and the `artist.*` image found from them so far.
+    """
+
+    def __init__(self, lib):
+        dirs: Dict[str, Set[str]] = {}
+        with lib.transaction() as tx:
+            for name, path in tx.query(
+                    """
+                    SELECT a.albumartist, i.path
+                    FROM items i
+                             JOIN albums a ON i.album_id = a.id
+                    """):
+                dirs.setdefault(name, set()).add(os.path.dirname(os.fsdecode(path)))
+
+        root = app.config['root_directory']
+        self.album_dirs = {name: {resolve_path(d, root) for d in names} for name, names in dirs.items()}
+        self.images: Dict[str, Path] = {}
+
+
+# (beets db mtime, artist folders read from it), swapped as a whole so readers never need a lock
+_artist_folders: Optional[Tuple[float, _ArtistFolders]] = None
+
+
+def _get_artist_folders() -> _ArtistFolders:
+    global _artist_folders
+
+    mtime = os.path.getmtime(os.fsdecode(flask.g.lib.path))
+    cached = _artist_folders
+    if cached is None or cached[0] != mtime:
+        cached = _artist_folders = (mtime, _ArtistFolders(flask.g.lib))
+
+    return cached[1]
+
+
 def _image_from_artist_folder(artist_name: str) -> Path | None:
     """
     An `artist.*` image (e.g. from beets' artistart plugin) in the folder shared by the artist's albums or,
     failing that, above one of them. Each folder's parents are tried too, up to 2 levels within the library.
     """
-    with flask.g.lib.transaction() as tx:
-        rows = tx.query(
-            """
-            SELECT i.path
-            FROM items i
-                     JOIN albums a ON i.album_id = a.id
-            WHERE a.albumartist = ?
-            """, (artist_name,)
-        )
+    folders = _get_artist_folders()
+    found = folders.images.get(artist_name)
+    if found and found.is_file():
+        return found
 
     root = Path(app.config['root_directory'])
-    album_dirs = {resolve_path(row[0], root).parent for row in rows}
+    album_dirs = folders.album_dirs.get(artist_name)
     if not album_dirs:
         return None
 
@@ -555,6 +622,7 @@ def _image_from_artist_folder(artist_name: str) -> Path | None:
             except OSError:
                 images = []
             if images:
+                folders.images[artist_name] = images[0]
                 return images[0]
             if folder == root:
                 break
