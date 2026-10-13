@@ -8,7 +8,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Union, Dict, Set, Tuple
+from typing import TYPE_CHECKING, Optional, Union, Dict, List, Set, Tuple
 from io import BytesIO
 from PIL import Image, ImageOps
 import flask
@@ -587,6 +587,12 @@ def _get_artist_folders() -> _ArtistFolders:
     return cache['folders']
 
 
+def _shared_folder(album_dirs: Set[Path]) -> Path:
+    """The folder an artist's albums share, or the one above its only album."""
+    shared = Path(os.path.commonpath(album_dirs))
+    return shared.parent if len(album_dirs) == 1 else shared
+
+
 def _image_from_artist_folder(artist_name: str) -> Path | None:
     """
     An `artist.*` image (e.g. from beets' artistart plugin) in the folder shared by the artist's albums or,
@@ -602,10 +608,7 @@ def _image_from_artist_folder(artist_name: str) -> Path | None:
     if not album_dirs:
         return None
 
-    shared = Path(os.path.commonpath(album_dirs))
-    if len(album_dirs) == 1:
-        shared = shared.parent
-
+    shared = _shared_folder(album_dirs)
     seen = set()
     for folder in [shared, *sorted({d.parent for d in album_dirs})]:
         for _ in range(3):
@@ -625,6 +628,41 @@ def _image_from_artist_folder(artist_name: str) -> Path | None:
             folder = folder.parent
 
     return None
+
+
+@with_app_context
+def missing_local_art() -> Tuple[List[Path], List[Tuple[str, List[Path]]]]:
+    """
+    The folder of every album with neither its artpath nor an image in that folder, and every album artist with
+    neither an uploaded image nor an `artist.*` file, with the folders one would be found in.
+    Art fetched online instead (Cover Art Archive, Deezer) doesn't count.
+    """
+    from beetsplug.beetstreamnext.core.library.resolve import get_artist_metadata
+
+    root = Path(app.config['music_root'])
+
+    albums = []
+    for album in flask.g.lib.albums():
+        art_path = os.fsdecode(album.artpath or b'')
+        if art_path and resolve_path(art_path, root).is_file():
+            continue
+        try:
+            album_dir = resolve_path(os.fsdecode(album.item_dir()), root)
+        except ValueError:      # no items
+            continue
+        if not _image_from_folder(album_dir):
+            albums.append(album_dir)
+
+    folders = _get_artist_folders()
+    artists = []
+    for name in sorted(folders.album_dirs, key=str.casefold):
+        if _image_from_artist_folder(name) or find_uploaded_image(name, get_artist_metadata(name)['mbid']):
+            continue
+        album_dirs = folders.album_dirs[name]
+        shared = _shared_folder(album_dirs)
+        artists.append((name, [shared] if shared != root else sorted({d.parent for d in album_dirs})))
+
+    return sorted(albums), artists
 
 
 def _send_image_file(path: Path | str, size: Optional[int]) -> flask.Response | None:
