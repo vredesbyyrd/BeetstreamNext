@@ -14,7 +14,7 @@ from beetsplug.beetstreamnext.core.services.external.discogs import query_discog
 from beetsplug.beetstreamnext.core.storage.cache import (
     preload_songs, preload_albums, one_rating, one_like, one_play_stats, avg_rating, get_song_counts
 )
-from beetsplug.beetstreamnext.core.media.images import tokenised_image_url, album_art_version
+from beetsplug.beetstreamnext.core.media.images import tokenised_image_url, album_art_version, artist_art_version
 from beetsplug.beetstreamnext.core.library.ids import IDs, TYPES_PLAYABLE
 from beetsplug.beetstreamnext.core.library.resolve import Resolve, standardise_datadict, get_artist_metadata
 from beetsplug.beetstreamnext.utils.text import split_beets_multi, validate_mbid
@@ -250,7 +250,7 @@ class Serialise:
             'musicBrainzId': mbid,
             'title': artist_name,
             'albumCount': album_count,
-            'coverArt': subsonic_artist_id,
+            'coverArt': IDs.encode_cover(subsonic_artist_id, artist_art_version(artist_name, mbid)),
             'userRating': one_rating(subsonic_artist_id),
             'artistImageUrl': tokenised_image_url(subsonic_artist_id),
             'mediaType': 'artist'
