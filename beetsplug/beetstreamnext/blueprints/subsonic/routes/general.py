@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import List
 import flask
 
 from .. import subsonic_bp
@@ -6,7 +7,7 @@ from .. import subsonic_bp
 from beetsplug.beetstreamnext.application import app
 from beetsplug.beetstreamnext.utils.general import genres_formatter
 from beetsplug.beetstreamnext.utils.text import safe_str, sha256_hex
-from beetsplug.beetstreamnext.utils.db import get_beets_schema
+from beetsplug.beetstreamnext.utils.db import get_beets_schema, library_cache
 from beetsplug.beetstreamnext.blueprints.subsonic.responses import subsonic_response, subsonic_error
 from beetsplug.beetstreamnext.core.library.ids import IDs
 
@@ -92,12 +93,8 @@ def endpoint_get_open_subsonic_extensions() -> flask.Response:
     return subsonic_response(payload, resp_fmt=resp_fmt)
 
 
-# Spec: https://opensubsonic.netlify.app/docs/endpoints/getGenres/
-@subsonic_bp.route('/getGenres', methods=['GET', 'POST'])
-@subsonic_bp.route('/getGenres.view', methods=['GET', 'POST'])
-def endpoint_get_genres() -> flask.Response:
-    r = flask.request.values
-    resp_fmt = r.get('f', default='xml', type=safe_str)
+def _count_genres() -> List[dict]:
+    """Every genre with its song and album counts, most songs first."""
 
     queries = []
 
@@ -114,12 +111,7 @@ def endpoint_get_genres() -> flask.Response:
         queries.append("""SELECT genre AS g, 0 AS n_s, COUNT(*) AS n_a FROM albums GROUP BY genre""")
 
     if not queries:
-        payload = {
-            "genres": {
-                "genre": []
-            }
-        }
-        return subsonic_response(payload, resp_fmt=resp_fmt)
+        return []
 
     with flask.g.lib.transaction() as tx:
         mixed_genres = list(tx.query(" UNION ALL ".join(queries)))
@@ -140,9 +132,24 @@ def endpoint_get_genres() -> flask.Response:
     g_list = [(k, *v) for k, v in g_dict.items() if k]
     g_list.sort(key=lambda g: g[1], reverse=True)
 
+    return [dict(zip(["value", "songCount", "albumCount"], g, strict=True)) for g in g_list]
+
+
+# Spec: https://opensubsonic.netlify.app/docs/endpoints/getGenres/
+@subsonic_bp.route('/getGenres', methods=['GET', 'POST'])
+@subsonic_bp.route('/getGenres.view', methods=['GET', 'POST'])
+def endpoint_get_genres() -> flask.Response:
+    r = flask.request.values
+    resp_fmt = r.get('f', default='xml', type=safe_str)
+
+    # Counting reads every song, so it's only done again when the library changes
+    cache = library_cache('genres')
+    if 'genres' not in cache:
+        cache['genres'] = _count_genres()
+
     payload = {
         "genres": {
-            "genre": [dict(zip(["value", "songCount", "albumCount"], g, strict=True)) for g in g_list]
+            "genre": cache['genres']
         }
     }
     return subsonic_response(payload, resp_fmt=resp_fmt)
