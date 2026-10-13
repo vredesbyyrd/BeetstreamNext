@@ -519,6 +519,58 @@ def playlist_mosaic(playlist: 'Playlist', size: int = 500) -> BytesIO | None:
     return out
 
 
+def _image_from_artist_folder(artist_name: str) -> Path | None:
+    """
+    An `artist.*` image (e.g. from beets' artistart plugin) in the folder shared by the artist's albums or,
+    failing that, above one of them. Each folder's parents are tried too, up to 2 levels within the library.
+    """
+    with flask.g.lib.transaction() as tx:
+        rows = tx.query(
+            """
+            SELECT i.path
+            FROM items i
+                     JOIN albums a ON i.album_id = a.id
+            WHERE a.albumartist = ?
+            """, (artist_name,)
+        )
+
+    root = Path(app.config['root_directory'])
+    album_dirs = {resolve_path(row[0], root).parent for row in rows}
+    if not album_dirs:
+        return None
+
+    shared = Path(os.path.commonpath(album_dirs))
+    if len(album_dirs) == 1:
+        shared = shared.parent
+
+    seen = set()
+    for folder in [shared, *sorted({d.parent for d in album_dirs})]:
+        for _ in range(3):
+            if folder in seen or not folder.is_relative_to(root):
+                break
+            seen.add(folder)
+            try:
+                images = sorted(f for f in folder.iterdir()
+                                if f.stem.lower() == 'artist' and f.suffix.lower() in IMAGE_EXTENSIONS)
+            except OSError:
+                images = []
+            if images:
+                return images[0]
+            if folder == root:
+                break
+            folder = folder.parent
+
+    return None
+
+
+def _send_image_file(path: Path | str, size: Optional[int]) -> flask.Response | None:
+    if size or os.path.getsize(path) > RAW_ART_MAX_BYTES:
+        resized = _cached_resize(path, size or ALLOWED_THUMBNAIL_SIZES[-1])
+        return flask.send_file(resized, mimetype='image/jpeg') if resized else None
+
+    return flask.send_file(path, mimetype=get_mimetype(path))
+
+
 def _first_deezer_artist(names: list[str]) -> dict:
     """Try each candidate name in turn, returning the first Deezer artist match found."""
     for name in names:
@@ -559,6 +611,10 @@ def send_artist_image(artist, size=None) -> flask.Response | None:
     if manual:
         return _send_blob(manual, size)
 
+    folder_image = _image_from_artist_folder(artist_name)
+    if folder_image:
+        return _send_image_file(folder_image, size)
+
     cache_key = hashlib.md5(artist_name.encode('utf-8')).hexdigest()
     local_image_path = app.config['ARTIST_IMAGE_DATA_PATH'] / f'{cache_key}.jpg'
 
@@ -595,11 +651,7 @@ def send_artist_image(artist, size=None) -> flask.Response | None:
 
     # Serve local if it exists now
     if os.path.isfile(local_image_path):
-        if size or os.path.getsize(local_image_path) > RAW_ART_MAX_BYTES:
-            resized = _cached_resize(local_image_path, size or ALLOWED_THUMBNAIL_SIZES[-1])
-            return flask.send_file(resized, mimetype='image/jpeg') if resized else None
-
-        return flask.send_file(local_image_path, mimetype=get_mimetype(local_image_path))
+        return _send_image_file(local_image_path, size)
 
     # No local file: proxy from Deezer (without saving) if local save is off
     if app.config['fetch_artists_images']:
