@@ -9,6 +9,7 @@ from beetsplug.beetstreamnext.utils.text import safe_str, sha256_hex
 from beetsplug.beetstreamnext.utils.db import get_beets_schema
 from beetsplug.beetstreamnext.blueprints.subsonic.responses import subsonic_response, subsonic_error
 from beetsplug.beetstreamnext.core.library.ids import IDs
+from beetsplug.beetstreamnext.core.media.images import artist_art_version
 
 from beetsplug.beetstreamnext.blueprints.subsonic.routes.albums import album_payload
 from beetsplug.beetstreamnext.blueprints.subsonic.routes.artists import artist_payload
@@ -229,7 +230,7 @@ def endpoint_get_music_directory() -> flask.Response:
                 'title': artist_name,
                 'isDir': True,
                 'artist': artist_name,
-                'coverArt': artist_id,
+                'coverArt': IDs.encode_cover(artist_id, artist_art_version(artist_name, artist_mbid)),
             })
         payload['directory']['child'] = children
 
