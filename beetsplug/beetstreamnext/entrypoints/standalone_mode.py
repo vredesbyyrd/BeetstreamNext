@@ -18,7 +18,8 @@ from beetsplug.beetstreamnext.core.config.settings_schema import SETTINGS_SCHEMA
 from beetsplug.beetstreamnext.core.config.store import coerce_setting, settings_store
 from beetsplug.beetstreamnext.core.runtime.startup import prestartup_config, run_server
 from beetsplug.beetstreamnext.core.accounts.commands import (
-    cmd_clear_cache, cmd_create_user, cmd_update_user, cmd_delete_user, cmd_list_users, cmd_change_passwd
+    cmd_clear_cache, cmd_create_user, cmd_update_user, cmd_delete_user, cmd_list_users, cmd_change_passwd,
+    cmd_missing_art
 )
 from beetsplug.beetstreamnext.core.storage.schema import initialise_db
 from beetsplug.beetstreamnext.core.runtime.logging import bsn_logger
@@ -97,7 +98,8 @@ def main(argv: Optional[List[str]] = None) -> None:
     )
     parser.add_argument(
         'command', nargs='?', default='run',
-        choices=['run', 'create-user', 'update-user', 'delete-user', 'passwd', 'list-users', 'clear-cache'],
+        choices=['run', 'create-user', 'update-user', 'delete-user', 'passwd', 'list-users', 'clear-cache',
+                 'missing-art'],
         help='Action to perform (default: run)',
     )
     parser.add_argument('username', nargs='?',
@@ -277,6 +279,11 @@ def main(argv: Optional[List[str]] = None) -> None:
         return
 
     lib = Library(str(final_library_db), str(final_music_root))
+
+    if args.command == 'missing-art':
+        app.config.update(lib=lib, root_directory=Path(final_music_root))
+        cmd_missing_art()
+        return
 
     host = settings_store.get('host')
     port = settings_store.get('port')
