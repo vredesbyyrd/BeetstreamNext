@@ -12,6 +12,7 @@ from beetsplug.beetstreamnext.application import app
 from beetsplug.beetstreamnext.core.runtime.console import print_box
 from beetsplug.beetstreamnext.utils.ansi import TermColors
 from beetsplug.beetstreamnext.core.library.maintenance import clear_requests_caches
+from beetsplug.beetstreamnext.core.media.images import missing_local_art
 from beetsplug.beetstreamnext.core.accounts.users_crud import create_user, delete_user, list_users, get_user_roles, update_user
 
 
@@ -244,3 +245,21 @@ def cmd_clear_cache() -> None:
 
     except RuntimeError as e:
         print(str(e))
+
+
+def cmd_missing_art() -> None:
+    """
+    CLI command: List the albums and artists without local art
+    """
+
+    albums, artists = missing_local_art()
+
+    print(f"{len(albums)} albums without local art (no beets artpath and no image in the album's folder):")
+    for folder in albums:
+        print(f'  {folder}')
+
+    print(f'\n{len(artists)} artists without a local image (no uploaded image and no artist.* file beside their albums):')
+    for name, folders in artists:
+        print(f'  {name}')
+        for folder in folders:
+            print(f'    {folder}')
