@@ -253,10 +253,16 @@ def cmd_missing_art() -> None:
     """
 
     albums, artists = missing_local_art()
+    online = [folder for folder, has_mbid in albums if has_mbid]
+    none = [folder for folder, has_mbid in albums if not has_mbid]
 
-    print(f"{len(albums)} albums without local art (no beets artpath and no image in the album's folder):")
-    for folder in albums:
-        print(f'  {folder}')
+    print(f"{len(albums)} albums without local art (no beets artpath, no image in the album's folder, none embedded):")
+    for label, folders in (('With a MusicBrainz id, so served from Cover Art Archive if it has their art', online),
+                           ('Without one, so served no art', none)):
+        if folders:
+            print(f'  {label} ({len(folders)}):')
+            for folder in folders:
+                print(f'    {folder}')
 
     print(f'\n{len(artists)} artists without a local image (no uploaded image and no artist.* file beside their albums):')
     for name, folders in artists:
