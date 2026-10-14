@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import time
+from typing import Dict
 import requests
 
-from beetsplug.beetstreamnext.constants import USER_AGENT
+from beetsplug.beetstreamnext.constants import USER_AGENT, CAA_MISS_RECHECK_SEC
 from beetsplug.beetstreamnext.core.runtime.logging import bsn_logger
 from beetsplug.beetstreamnext.core.services.external.session import capped_image_fetch, http_session
 
@@ -57,8 +59,21 @@ def query_wikidata_title(mbid: str) -> str | None:
         return None
 
 
+# Release mbid -> when CAA had no front cover for it. The HTTP cache only keeps hits, and asking takes about a
+# second, which every request for the album's art would otherwise wait on
+_caa_misses: Dict[str, float] = {}
+
+
 def query_coverartarchive(mbid: str) -> bytes:
-    """Fetch image from CAA (size-capped) and cache the bytes. Returns b'' if not found to avoid retries."""
+    """Fetch image from CAA (size-capped) and cache the bytes. Returns b'' if not found, without asking again for a while."""
     if not mbid:
         return b''
-    return capped_image_fetch(f'https://coverartarchive.org/release/{mbid}/front')
+
+    missed = _caa_misses.get(mbid)
+    if missed is not None and time.monotonic() - missed < CAA_MISS_RECHECK_SEC:
+        return b''
+
+    image = capped_image_fetch(f'https://coverartarchive.org/release/{mbid}/front')
+    if not image:
+        _caa_misses[mbid] = time.monotonic()
+    return image
