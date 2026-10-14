@@ -635,11 +635,11 @@ def _image_from_artist_folder(artist_name: str) -> Path | None:
 
 
 @with_app_context
-def missing_local_art() -> Tuple[List[Path], List[Tuple[str, List[Path]]]]:
+def missing_local_art() -> Tuple[List[Tuple[Path, bool]], List[Tuple[str, List[Path]]]]:
     """
-    The folder of every album with neither its artpath nor an image in that folder, and every album artist with
-    neither an uploaded image nor an `artist.*` file, with the folders one would be found in.
-    Art fetched online instead (Cover Art Archive, Deezer) doesn't count.
+    The folder of every album with no artpath file, no image in that folder and no picture in its first track,
+    with whether it has a MusicBrainz release id (its art is then fetched from Cover Art Archive), and every album
+    artist with neither an uploaded image nor an `artist.*` file, with the folders one would be found in.
     """
     from beetsplug.beetstreamnext.core.library.resolve import get_artist_metadata
 
@@ -654,8 +654,8 @@ def missing_local_art() -> Tuple[List[Path], List[Tuple[str, List[Path]]]]:
             album_dir = resolve_path(os.fsdecode(album.item_dir()), root)
         except ValueError:      # no items
             continue
-        if not _image_from_folder(album_dir):
-            albums.append(album_dir)
+        if not _image_from_folder(album_dir) and not image_from_song(album_dir):
+            albums.append((album_dir, bool(validate_mbid(album.get('mb_albumid')))))
 
     folders = _get_artist_folders()
     artists = []

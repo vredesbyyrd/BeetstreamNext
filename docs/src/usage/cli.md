@@ -91,9 +91,9 @@ The interactivity is _deliberate_: these commands touch credentials, so user inp
 
 `--missing-art` (`missing-art` in standalone mode) lists, by folder, what clients get no local art for:
 
-- **Albums** with neither the art file beets recorded (`artpath`) nor an image in the album's folder. For a multi-disc album that is its first disc's folder.
+- **Albums** with no art file recorded by beets (`artpath`), no image in the album's folder (for a multi-disc album, its first disc's folder) and no picture embedded in its first track. They're split by whether they have a MusicBrainz release id, which is what lets BeetstreamNext fetch their art from Cover Art Archive instead.
 - **Album artists** with neither an image uploaded in the web UI nor an `artist.*` file in the folder their albums share (or above it), with that folder.
 
-Art BeetstreamNext would fetch online instead (Cover Art Archive, Deezer) isn't counted.
+Art fetched online (Cover Art Archive, Deezer) isn't local art, so it doesn't take an album or artist off the list.
 
 ---
