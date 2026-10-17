@@ -29,6 +29,8 @@ A lot of what shows up in your Subsonic client (artist photos, biographies, comm
 
   - `follow_playlist_embedded_urls` lets cover art be pulled from a foreign playlist's `#EXTALBUMARTURL` lines, for albums that have no local art. (_only enable for playlist sources you trust!)_
 
+- Album and artist cover art IDs change when the local art does, so clients that cache images by ID show the new art. Art files are checked again every 10 minutes, or right away with *Recheck cover art* in the web UI's Maintenance tab.
+
 ## Sonic similarity
 
 To expose OpenSubsonic's `sonicSimilarity` extension, BeetstreamNext integrates with **[AudioMuse-AI](https://github.com/NeptuneHub/AudioMuse-AI)**, a self-hosted audio-analysis service. This is used for *acoustic* similarity (based on the audio, not tags or genre), to find similar songs, and path-finding a playlist between two tracks based on their audio embeddings.

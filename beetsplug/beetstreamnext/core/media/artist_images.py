@@ -86,6 +86,30 @@ def find_uploaded_image(name: str, mbid: Optional[str] = None) -> bytes | None:
     return next((by_key[k] for k in keys if k in by_key), None)
 
 
+def uploaded_at(name: str, mbid: Optional[str] = None) -> float | None:
+    """
+    When the image find_uploaded_image() returns for this artist was uploaded, or None if it has none.
+    """
+
+    # Read once per request: a response can list every artist
+    uploads = flask.g.get('_artist_uploads')
+    if uploads is None:
+        with database() as db:
+            rows = db.execute(
+                """
+                SELECT artist_key, uploaded_at
+                FROM artist_images
+                WHERE image IS NOT NULL
+                """
+            ).fetchall()
+        uploads = flask.g._artist_uploads = {r['artist_key']: r['uploaded_at'] for r in rows}
+
+    if not uploads:
+        return None
+
+    return next((uploads[k] for k in artist_keys(name, mbid) if k in uploads), None)
+
+
 def get_image(key: str) -> bytes | None:
 
     with database() as db:
