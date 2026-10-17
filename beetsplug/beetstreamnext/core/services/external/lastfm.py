@@ -10,7 +10,10 @@ from beetsplug.beetstreamnext.core.config.store import settings_store
 from beetsplug.beetstreamnext.core.services.external.session import http_session
 
 
-def query_lastfm(q: str, data_type: str, method: str = 'info', is_mbid: bool = True, artist: str = '') -> dict:
+def query_lastfm(q: str, data_type: str, method: str = 'info', is_mbid: bool = True, artist: str = '', name: str = '') -> dict:
+    """
+    name: looked up instead when Last.fm doesn't know the MBID
+    """
 
     if not app.config['lastfm_api_key']:
         return {}
@@ -37,10 +40,16 @@ def query_lastfm(q: str, data_type: str, method: str = 'info', is_mbid: bool = T
         response = http_session().get(endpoint, headers=headers, params=params, timeout=15) # lastfm is very slow...
         if response.from_cache:
             bsn_logger.debug(f"Cache hit for Last.fm: {q}")
-        return response.json() if response.ok else {}
+        data = response.json() if response.ok else {}
 
     except requests.exceptions.RequestException:
         return {}
+
+    # Error 6: not found. Last.fm doesn't know every MusicBrainz ID
+    if is_mbid and name and data.get('error') == 6:
+        return query_lastfm(q=name, data_type=data_type, method=method, is_mbid=False, artist=artist)
+
+    return data
 
 
 def test_lastfm_connection() -> tuple[bool, str]:
