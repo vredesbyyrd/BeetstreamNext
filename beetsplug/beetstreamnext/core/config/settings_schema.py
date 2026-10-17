@@ -389,6 +389,15 @@ SETTINGS_SCHEMA: Dict[str, SettingDescriptor] = {
         'sensitive': True,
         'env_var': 'BSN_LASTFM_API_KEY',
     },
+    'lastfm_api_secret': {
+        'type': 'str',
+        'default': '',
+        'category': 'library',
+        'description': 'Shared secret of the Last.fm API key, needed for users to link their Last.fm accounts and scrobble.',
+        'requires_restart': False,
+        'sensitive': True,
+        'env_var': 'BSN_LASTFM_API_SECRET',
+    },
     'fetch_artists_images': {
         'type': 'bool',
         'default': False,
