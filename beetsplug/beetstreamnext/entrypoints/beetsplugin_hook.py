@@ -30,7 +30,8 @@ from beetsplug.beetstreamnext.core.runtime.logging import bsn_logger
 from beetsplug.beetstreamnext.core.runtime.startup import run_server, prestartup_config
 from beetsplug.beetstreamnext.core.storage.schema import initialise_db
 from beetsplug.beetstreamnext.core.accounts.commands import (
-    cmd_clear_cache, cmd_create_user, cmd_update_user, cmd_delete_user, cmd_list_users, cmd_change_passwd
+    cmd_clear_cache, cmd_create_user, cmd_update_user, cmd_delete_user, cmd_list_users, cmd_change_passwd,
+    cmd_missing_art
 )
 from beetsplug.beetstreamnext.utils.system import get_env
 
@@ -105,6 +106,7 @@ class BeetstreamNextPlugin(BeetsPlugin):
 
         # Maintenance
         cmd.parser.add_option('--clear-cache', action='store_true', help="Clear thumbnail and HTTP cache")
+        cmd.parser.add_option('--missing-art', action='store_true', help="List albums and artists without local art")
 
         def func(lib, opts, args):
 
@@ -128,6 +130,12 @@ class BeetstreamNextPlugin(BeetsPlugin):
             # Cache clearing
             if opts.clear_cache:
                 cmd_clear_cache()
+                return
+
+            # Albums and artists without local art
+            if opts.missing_art:
+                app.config.update(lib=lib)
+                cmd_missing_art()
                 return
 
             # Create a new user

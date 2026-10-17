@@ -27,9 +27,10 @@ beet beetstreamnext [options]
 | `-p`, `--password USERNAME`    | Change a user's password (interactive prompts)                                                             |
 | `--list-users`                 | List all registered users and their roles                                                                  |
 | `--clear-cache`                | Clear the thumbnail and HTTP caches                                                                        |
+| `--missing-art`                | List the folders of albums and artists without local art (see below)                                       |
 
 > [!NOTE]
-> User-management or cache flags perform the action and exit immediately. They do _not_ start the server.
+> User-management, cache or art flags perform the action and exit immediately. They do _not_ start the server.
 
 Settings not overridden by a flag come from Beets' `config.yaml` (under the `beetstreamnext:` key), see the [configuration reference](../configuration.md).
 
@@ -48,6 +49,7 @@ beetstreamnext [command] [username] [options]
 | `passwd [username]`      | Change a user's password (interactive prompts)        |
 | `list-users`             | List all registered users and their key roles         |
 | `clear-cache`            | Clear the thumbnail and HTTP caches                   |
+| `missing-art`            | List albums and artists without local art (see below) |
 
 > [!NOTE]
 > `command` defaults to `run` if omitted
@@ -84,5 +86,14 @@ See the [configuration reference](../configuration.md) for the full settings pre
 - **Delete**: Asks for a confirmation before removing the account.
 
 The interactivity is _deliberate_: these commands touch credentials, so user input is mandatory. Only exception to this is the [Unattended first run](../installation.md#unattended-first-run).
+
+## Missing art
+
+`--missing-art` (`missing-art` in standalone mode) lists, by folder, what clients get no local art for:
+
+- **Albums** with no art file recorded by beets (`artpath`), no image in the album's folder (for a multi-disc album, its first disc's folder) and no picture embedded in its first track. They're split by whether they have a MusicBrainz release id, which is what lets BeetstreamNext fetch their art from Cover Art Archive instead.
+- **Album artists** with neither an image uploaded in the web UI nor an `artist.*` file in the folder their albums share (or above it), with that folder.
+
+Art fetched online (Cover Art Archive, Deezer) isn't local art, so it doesn't take an album or artist off the list.
 
 ---
