@@ -152,7 +152,8 @@ COLLAPSE_SPACES = re.compile(r'\s+')
 
 DECADE_APOSTROPHE = re.compile(r"(\d)'([A-Za-z])\b")
 
-AUDIO_EXTENSIONS = frozenset(f'.{ext}' for ext in mediafile.TYPES)
+# mediafile lists formats, and reads some of them from files under other extensions
+AUDIO_EXTENSIONS = frozenset(f'.{ext}' for ext in mediafile.TYPES) | {'.m4a', '.m4b', '.oga', '.wma', '.aif'}
 
 
 ## Security
