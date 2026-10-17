@@ -35,6 +35,10 @@ To expose OpenSubsonic's `sonicSimilarity` extension, BeetstreamNext integrates 
 
 Point `audiomuse_url` at your **AudioMuse-AI** instance and set `audiomuse_api_token` to enable it. The admin panel can trigger a full-library fingerprinting run on AudioMuse-AI directly.
 
+## Search
+
+A search finds the songs, albums and artists in which each word of the query starts a word: of a song's title, album and credits (artists, composers, lyricists, arrangers and remixers), of an album's title, version, catalog number and every credit on it or its songs, or of an artist's name. Case, accents and punctuation don't count, so `bjork` finds Björk.
+
 ## Advanced search: Beets query passthrough
 
 Any search request can be turned into a raw Beets query by prefixing it with  `beets:` or `b:`, for example `b:length:..3:30` to find tracks under 3:30. This runs Beets' own complex query DSL (regex, field-specific, fuzzy matching) straight from your client's search bar, instead of a normal search.
