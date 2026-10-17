@@ -217,7 +217,7 @@ def endpoint_artist_info() -> flask.Response:
         tag: {
             'biography': short_bio,
             'musicBrainzId': artist_mbid,
-            'lastFmUrl': f"https://www.last.fm/music/{urllib.parse.quote_plus(artist_name.replace(' ', '+'))}",
+            'lastFmUrl': f"https://www.last.fm/music/{urllib.parse.quote_plus(artist_name)}",
             'largeImageUrl': tokenised_image_url(image_id, size=1200),
             'mediumImageUrl': tokenised_image_url(image_id, size=500),
             'smallImageUrl': tokenised_image_url(image_id, size=250)
