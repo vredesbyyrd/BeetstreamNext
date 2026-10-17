@@ -198,6 +198,7 @@ IMPORTWATCH_POLL_TIME: int = 30  # seconds
 
 NOW_PLAYING_TIMEOUT_SEC: int = 600   # stale after 10 min
 CLEANUP_INTERVAL_SEC: int = 86400    # clean once per day
+CAA_MISS_RECHECK_SEC: int = 86400    # ask Cover Art Archive again for a release it had no cover for after a day
 MAX_CACHE_AGE_DAYS: int = 30
 SESSION_KEY_ROTATION_DAYS: int = 30
 
