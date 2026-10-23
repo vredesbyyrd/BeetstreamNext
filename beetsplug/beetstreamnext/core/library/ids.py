@@ -47,7 +47,7 @@ class IDs:
     _ALB_MBID_PREF = 'al-m-'     # al-m-<base64url(mb_albumid)>
     _ALB_HASH_PREF = 'al-h-'     # al-h-<hash of "albumartist\x1falbum">
 
-    _COVER_VERSION_SEP = '.'     # coverArt: <album id>.<art version>, so the id changes with the art
+    _COVER_VERSION_SEP = '.'     # coverArt: <album or artist id>.<art version>, so the id changes with the art
 
     _PLY_ID_PREF = 'pl-'
     _RAD_ID_PREF = 'ir-'
@@ -254,7 +254,7 @@ class IDs:
         Decode a coverArt ID back to the ID of the item it pictures (anything else is returned as is).
         """
         base, sep, version = str(cover_id).rpartition(cls._COVER_VERSION_SEP)
-        if sep and version and set(version) <= set(string.hexdigits) and cls.decode_type(base) == 'album':
+        if sep and version and set(version) <= set(string.hexdigits) and cls.decode_type(base) in ('album', 'artist'):
             return base
         return cover_id
 
