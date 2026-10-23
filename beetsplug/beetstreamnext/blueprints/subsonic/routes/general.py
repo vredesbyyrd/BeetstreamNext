@@ -9,6 +9,7 @@ from beetsplug.beetstreamnext.utils.text import safe_str, sha256_hex
 from beetsplug.beetstreamnext.utils.db import get_beets_schema
 from beetsplug.beetstreamnext.blueprints.subsonic.responses import subsonic_response, subsonic_error
 from beetsplug.beetstreamnext.core.library.ids import IDs
+from beetsplug.beetstreamnext.core.library.resolve import artist_identity
 
 from beetsplug.beetstreamnext.blueprints.subsonic.routes.albums import album_payload
 from beetsplug.beetstreamnext.blueprints.subsonic.routes.artists import artist_payload
@@ -219,10 +220,7 @@ def endpoint_get_music_directory() -> flask.Response:
         children = []
         for row in rows:
             artist_name, artist_mbid, albumartists_raw = row
-            if IDs.is_joint_credit(albumartists_raw, artist_name):
-                artist_id = IDs.encode_artist(artist_name, joint_credit=True)
-            else:
-                artist_id = IDs.encode_artist(artist_mbid or artist_name, is_mbid=bool(artist_mbid))
+            artist_id, _ = artist_identity(artist_name, artist_mbid, IDs.is_joint_credit(albumartists_raw, artist_name))
 
             children.append({
                 'id': artist_id,

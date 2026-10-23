@@ -54,16 +54,46 @@ def standardise_datadict(obj: Dict | LibModel | Item | Any) -> dict:
         return {}
 
 
+def _get_artist_index() -> ArtistIndex:
+    # Looked up for every artist a response credits: check the db once per request
+    index = flask.g.get('_artist_index')
+    if index is None:
+        index = flask.g._artist_index = ArtistIndex.get()
+
+    return index
+
+
 def get_artist_metadata(name: str) -> dict:
     """
-    Lookup MBID, sort name and roles for a given artist name.
+    Lookup MBID, sort name, roles and whether it's a joint credit for a given artist name.
     The returned dict is shared: don't mutate it.
     """
 
     if not name:
-        return {'mbid': '', 'sort_name': '', 'roles': []}
+        return {'mbid': '', 'sort_name': '', 'roles': [], 'joint': False}
 
-    return ArtistIndex.get().metadata(name)
+    return _get_artist_index().metadata(name)
+
+
+def artist_identity(name: str, mbid: str = '', joint_credit: bool = False) -> Tuple[str, str]:
+    """
+    (Subsonic ID, MBID) of the artist credited as name. A library album artist has the same ones
+    wherever it's credited, whatever the album or song at hand carries; any other name keeps the
+    MBID and joint credit it comes with.
+    """
+    meta = get_artist_metadata(name)
+    if 'albumartist' in meta['roles']:
+        mbid, joint_credit = meta['mbid'], meta['joint']
+
+    mbid = validate_mbid(mbid)
+    if joint_credit:
+        return IDs.encode_artist(name, joint_credit=True), mbid
+    return IDs.encode_artist(mbid or name, is_mbid=bool(mbid)), mbid
+
+
+def album_artist_by_mbid(mbid: str) -> Optional[str]:
+    """The library album artist whose ID carries this MBID (see artist_identity)."""
+    return _get_artist_index().artist_by_mbid.get(mbid)
 
 
 ##
@@ -121,6 +151,10 @@ class Resolve:
             return None                         # ID of something else (radio, playlist, podcast etc)
 
         if kind == 'mbid':
+            artist_name = album_artist_by_mbid(value)
+            if artist_name:
+                return artist_name, value
+
             with flask.g.lib.transaction() as tx:
                 # Prefer solo credit row for this MBID over a joint one
                 rows = tx.query(

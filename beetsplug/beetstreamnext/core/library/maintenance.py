@@ -228,6 +228,62 @@ def sweep_stale_references() -> dict[str, int]:
     return purged
 
 
+# Tables (and id column) that can hold an artist reference
+_ARTIST_REF_TABLES = (
+    ('likes', 'item_id'),
+    ('ratings', 'item_id'),
+    ('artist_images', 'artist_key'),
+)
+
+
+@with_app_context
+def move_artist_references() -> int:
+    """
+    Moves stars, ratings and images kept under an album artist's former ID to its current one: the ID
+    follows the MBID most of its albums carry, which imports and edits can change.
+    Returns the number of rows moved.
+    """
+    from beetsplug.beetstreamnext.core.library.resolve import Resolve, artist_identity, get_artist_metadata
+
+    moved = 0
+
+    with database() as db:
+        for table, column in _ARTIST_REF_TABLES:
+            rows = db.execute(
+                f"""
+                SELECT DISTINCT {column}
+                FROM {table}
+                WHERE {column} LIKE 'ar-%'
+                """  # nosec B608
+            ).fetchall()
+
+            for (old_id,) in rows:
+                resolved = Resolve.artist(old_id)
+                if not resolved or 'albumartist' not in get_artist_metadata(resolved[0])['roles']:
+                    continue
+
+                new_id, _ = artist_identity(resolved[0])
+                if new_id == old_id:
+                    continue
+
+                # A row already kept under the current ID wins over the moved one
+                moved += db.execute(
+                    f"""
+                    UPDATE OR IGNORE {table}
+                    SET {column} = ?
+                    WHERE {column} = ?
+                    """, (new_id, old_id)  # nosec B608
+                ).rowcount
+                db.execute(
+                    f"""
+                    DELETE FROM {table}
+                    WHERE {column} = ?
+                    """, (old_id,)  # nosec B608
+                )
+
+    return moved
+
+
 def run_periodic():
     """
     Runs housekeeping periodically.
@@ -260,6 +316,14 @@ def run_periodic():
             app.config['podcast_manager'].resume_downloads()
         except Exception as e:
             bsn_logger.error(f'Podcast episode download recovery failed: {e}')
+
+        # Stars, ratings and images of album artists whose ID changed
+        try:
+            moved = move_artist_references()
+            if moved:
+                bsn_logger.info(f"{SERVER_NAME} moved {moved} artist star(s), rating(s) or image(s) to the artist's current ID")
+        except Exception as e:
+            bsn_logger.error(f'Moving artist references failed: {e}')
 
         # Purge stale refs
         try:

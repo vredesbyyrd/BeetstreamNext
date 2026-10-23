@@ -17,7 +17,7 @@ from beetsplug.beetstreamnext.core.storage.cache import preload_artists
 from beetsplug.beetstreamnext.core.media.images import tokenised_image_url
 from beetsplug.beetstreamnext.blueprints.subsonic.responses import subsonic_response, subsonic_error
 from beetsplug.beetstreamnext.core.library.ids import IDs
-from beetsplug.beetstreamnext.core.library.resolve import Resolve
+from beetsplug.beetstreamnext.core.library.resolve import Resolve, artist_identity
 from beetsplug.beetstreamnext.core.library.serialise import Serialise
 from beetsplug.beetstreamnext.core.config.settings_schema import SETTINGS_SCHEMA
 
@@ -232,11 +232,7 @@ def endpoint_artist_info() -> flask.Response:
             )
 
         is_joint = bool(rows and IDs.is_joint_credit(rows[0][0], artist_name))
-
-        image_id = (
-            IDs.encode_artist(artist_name, joint_credit=True) if is_joint
-            else IDs.encode_artist(artist_mbid or artist_name, is_mbid=bool(artist_mbid))
-        )
+        image_id, _ = artist_identity(artist_name, artist_mbid, is_joint)
 
     payload = {
         tag: {
