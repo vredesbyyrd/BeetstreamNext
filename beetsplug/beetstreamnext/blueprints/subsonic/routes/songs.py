@@ -189,11 +189,17 @@ def endpoint_get_top_songs() -> flask.Response:
                 top_tracks_available = list(tx.query(sql, [artist_name, *name_params, *lastfm_track_names]))
 
             if top_tracks_available:
-                preload_songs(top_tracks_available)
+                # One song per title (a title can be on several albums), in Last.fm's order
+                by_title = {}
+                for song in top_tracks_available:
+                    by_title.setdefault(song['title'], song)
+                top_songs = [by_title[name] for name in dict.fromkeys(lastfm_track_names) if name in by_title][:count]
+
+                preload_songs(top_songs)
 
                 payload = {
                     'topSongs': {
-                        'song': [Serialise.song(s) for s in top_tracks_available]
+                        'song': [Serialise.song(s) for s in top_songs]
                     }
                 }
                 return subsonic_response(payload, resp_fmt=resp_fmt)
