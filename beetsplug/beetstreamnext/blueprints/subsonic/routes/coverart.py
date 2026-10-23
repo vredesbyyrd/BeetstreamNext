@@ -9,6 +9,7 @@ from beetsplug.beetstreamnext.application import app
 from beetsplug.beetstreamnext.utils.text import safe_str
 from beetsplug.beetstreamnext.utils.system import make_hidden, find_binary, resolve_path
 from beetsplug.beetstreamnext.blueprints.subsonic.responses import subsonic_error
+from beetsplug.beetstreamnext.core.library.ids import IDs
 from beetsplug.beetstreamnext.core.library.resolve import Resolve
 
 from beetsplug.beetstreamnext.core.runtime.logging import bsn_logger
@@ -24,7 +25,7 @@ from beetsplug.beetstreamnext.core.media.images import (
 def endpoint_get_cover_art() -> flask.Response:
     r = flask.request.values
     resp_fmt = r.get('f', default='xml', type=safe_str)
-    req_id = r.get('id', default='', type=safe_str)      # Required
+    req_id = IDs.decode_cover(r.get('id', default='', type=safe_str))      # Required
     req_size = r.get('size', default=0, type=int)
 
     # TODO: Return placeholder images
