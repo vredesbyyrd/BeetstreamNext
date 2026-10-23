@@ -7,7 +7,6 @@ from .. import subsonic_bp
 from beetsplug.beetstreamnext.constants import (
     MAX_CLIENT_NAME_CHAR, MAX_ITEM_ID_CHAR, NOW_PLAYING_TIMEOUT_SEC, PLAYBACK_STATES
 )
-from beetsplug.beetstreamnext.application import app
 from beetsplug.beetstreamnext.core.storage.connection import database
 from beetsplug.beetstreamnext.utils.general import api_bool
 from beetsplug.beetstreamnext.utils.text import safe_str
@@ -15,6 +14,7 @@ from beetsplug.beetstreamnext.blueprints.subsonic.responses import subsonic_resp
 from beetsplug.beetstreamnext.core.library.ids import IDs
 from beetsplug.beetstreamnext.core.library.resolve import Resolve, standardise_datadict
 from beetsplug.beetstreamnext.core.library.serialise import Serialise
+from beetsplug.beetstreamnext.core.services.scrobbling import linked_accounts, queue_scrobbles, send_now_playing, track_of
 
 # Spec: https://opensubsonic.netlify.app/docs/endpoints/scrobble/
 @subsonic_bp.route('/scrobble', methods=['GET', 'POST'])
@@ -51,9 +51,16 @@ def endpoint_scrobble() -> flask.Response:
                     state       = 'playing'
                 """, (username, p_id, now, client)
             )
+
+        if flask.g.user_data.get('scrobblingEnabled') and linked_accounts(username):
+            entry_type, item = Resolve.any(p_id)
+            if entry_type == 'song' and item:
+                send_now_playing(username, track_of(item))
+
         return subsonic_response({}, resp_fmt=resp_fmt)
 
     # If submission=true, this is a completed playback
+    plays = []
     with database() as db:
         # Clean up "now playing" state
         db.execute(
@@ -86,10 +93,10 @@ def endpoint_scrobble() -> flask.Response:
                         last_played = excluded.last_played
                     """, (username, canonical_id, played_at)
                 )
+                plays.append((track_of(item), int(played_at)))
 
-    if app.config.get('lastfm_api_key') and flask.g.user_data.get('scrobblingEnabled'):
-        # TODO: Lastfm scrobble
-        pass
+    if flask.g.user_data.get('scrobblingEnabled'):
+        queue_scrobbles(username, plays)
 
     return subsonic_response({}, resp_fmt=resp_fmt)
 
@@ -196,6 +203,12 @@ def endpoint_report_playback() -> flask.Response:
                 """, (media_id, position_ms, state, playback_rate, client, username)
             )
 
+    if (state == 'starting' and not ignore_scrobble
+            and flask.g.user_data.get('scrobblingEnabled') and linked_accounts(username)):
+        entry_type, item = Resolve.any(media_id)
+        if entry_type == 'song' and item:
+            send_now_playing(username, track_of(item))
+
     # Check for scrobble threshold: played for 4 minutes or 50% of total length
     if not ignore_scrobble and state == 'playing':
         entry_type, item = Resolve.any(media_id)
@@ -236,8 +249,7 @@ def endpoint_report_playback() -> flask.Response:
                             """, (username,)
                         )
 
-                        if app.config.get('lastfm_api_key') and flask.g.user_data.get('scrobblingEnabled'):
-                            # TODO: Last.fm scrobble call
-                            pass
+                        if flask.g.user_data.get('scrobblingEnabled'):
+                            queue_scrobbles(username, [(track_of(item), int(now - position_ms / 1000))])
 
     return subsonic_response({}, resp_fmt=resp_fmt)

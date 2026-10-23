@@ -15,6 +15,7 @@ from beetsplug.beetstreamnext.core.runtime.logging import bsn_logger
 from beetsplug.beetstreamnext.application import app, with_app_context
 from beetsplug.beetstreamnext.core.storage.connection import database
 from beetsplug.beetstreamnext.core.library.health import scan_library
+from beetsplug.beetstreamnext.core.services.scrobbling import submit_queued_scrobbles
 from beetsplug.beetstreamnext.core.accounts.security import rate_limiter
 from beetsplug.beetstreamnext.core.accounts.sessions import purge_expired_sessions
 from beetsplug.beetstreamnext.core.config.settings_schema import SETTINGS_SCHEMA
@@ -268,6 +269,9 @@ def run_periodic():
                 bsn_logger.info(f'{SERVER_NAME} database cleanup purged: {details}')
         except Exception as e:
             bsn_logger.error(f'{SERVER_NAME} database cleanup failed: {e}')
+
+        # Retry the scrobbles a service couldn't take
+        submit_queued_scrobbles()
 
         # Incremental audio health scan
         try:
